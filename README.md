@@ -2,7 +2,7 @@
 
 A professional web platform for manual scoring of images using the **Karolinska Sleepiness Scale (KSS)** for drowsiness research. Built for research teams to collect objective drowsiness ratings from multiple scorers.
 
-## 🎯 Project Overview
+## Project Overview
 
 This platform enables researchers to:
 - Upload and manage image datasets for KSS scoring
@@ -11,7 +11,7 @@ This platform enables researchers to:
 - Track progress and export data for analysis
 - Manage users and view analytics through admin dashboard
 
-## 🏗️ Tech Stack
+## Tech Stack
 
 ### **Frontend**
 - **Framework**: React 18.x
@@ -50,34 +50,34 @@ assignments (id, user_id, image_id, status, assigned_at, completed_at)
 - **Recommended Production**: AWS (EC2 + RDS + S3) or AWS Lightsail
 - **Containerization**: Docker ready (Dockerfile included)
 
-## 🚀 Features
+## Features
 
 ### **Core Research Features**
-- ✅ **KSS Scale Implementation** (1-9 scale with descriptions)
-- ✅ **Mandatory Explanations** (minimum 10 characters for data quality)
-- ✅ **Time Tracking** (measures time spent per image)
-- ✅ **Progress Tracking** (visual completion percentages)
-- ✅ **Multi-scorer Support** (for inter-rater reliability studies)
-- ✅ **Bulk Assignment System** (distribute work efficiently)
+- **KSS Scale Implementation** (1-9 scale with descriptions)
+- **Mandatory Explanations** (minimum 10 characters for data quality)
+- **Time Tracking** (measures time spent per image)
+- **Progress Tracking** (visual completion percentages)
+- **Multi-scorer Support** (for inter-rater reliability studies)
+- **Bulk Assignment System** (distribute work efficiently)
 
 ### **User Management**
-- ✅ **Role-based Access** (admin, scorer roles)
-- ✅ **JWT Authentication** (secure session management)
-- ✅ **User Dashboard** (progress overview, recent scores)
-- ✅ **Admin Panel** (user management, analytics)
+- **Role-based Access** (admin, scorer roles)
+- **JWT Authentication** (secure session management)
+- **User Dashboard** (progress overview, recent scores)
+- **Admin Panel** (user management, analytics)
 
 ### **Data Export & Analytics**
-- ✅ **CSV Export** (for statistical analysis)
-- ✅ **Scoring Analytics** (completion rates, time statistics)
-- ✅ **Admin Dashboard** (real-time progress monitoring)
+- **CSV Export** (for statistical analysis)
+- **Scoring Analytics** (completion rates, time statistics)
+- **Admin Dashboard** (real-time progress monitoring)
 
-## 📋 Prerequisites
+## Prerequisites
 
 - **Node.js** 18+ 
 - **npm** or **yarn**
 - **SQLite** (included with Node.js)
 
-## ⚡ Quick Start
+## Quick Start
 
 ### 1. **Clone and Install**
 ```bash
@@ -130,7 +130,7 @@ npm start          # Runs on http://localhost:3000
 - **Default Admin**: `admin` / `admin123`
 - **Default Scorer**: `scorer1` / `scorer123`
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 Rating_platform/
@@ -158,7 +158,7 @@ Rating_platform/
 └── README.md
 ```
 
-## 🔌 API Endpoints
+## API Endpoints
 
 ### **Authentication**
 ```
@@ -188,7 +188,7 @@ POST /api/admin/bulk-assign  # Assign images to users
 GET  /api/admin/export/scores # Export CSV data
 ```
 
-## 🎨 UI Components
+## UI Components
 
 ### **Scoring Interface**
 - Visual KSS scale (1-9) with descriptions
@@ -203,7 +203,7 @@ GET  /api/admin/export/scores # Export CSV data
 - Bulk operations interface
 - CSV export functionality
 
-## 🛡️ Security Features
+## Security Features
 
 - **JWT Authentication** with secure token storage
 - **Password Hashing** using bcrypt
@@ -212,7 +212,7 @@ GET  /api/admin/export/scores # Export CSV data
 - **Input Validation** on all endpoints
 - **Role-based Access Control**
 
-## 📊 Database Design
+## Database Design
 
 The platform uses a relational database design optimized for research data collection:
 
@@ -221,7 +221,7 @@ The platform uses a relational database design optimized for research data colle
 - **Scores table**: KSS ratings with explanations and timing
 - **Assignments table**: Work distribution and progress tracking
 
-## 🚀 Production Deployment
+## Production Deployment
 
 ### **Recommended AWS Setup**
 - **EC2 t3.small**: Application server ($15/month)
@@ -241,7 +241,7 @@ AWS_SECRET_ACCESS_KEY=your-aws-secret
 S3_BUCKET=your-s3-bucket
 ```
 
-## 📈 Scaling Considerations
+## Scaling Considerations
 
 - **Database**: Migrate SQLite → PostgreSQL for production
 - **File Storage**: Move from local files → AWS S3
@@ -249,7 +249,7 @@ S3_BUCKET=your-s3-bucket
 - **Load Balancing**: Use AWS ALB for high availability
 - **Monitoring**: Implement CloudWatch or similar
 
-## 🔧 Development Tools
+## Development Tools
 
 - **Backend Hot Reload**: nodemon
 - **Frontend Hot Reload**: React Fast Refresh
@@ -257,7 +257,7 @@ S3_BUCKET=your-s3-bucket
 - **API Testing**: Built-in health check endpoint
 - **Debugging**: Console logging with timestamps
 
-## 📝 Contributing
+## Contributing
 
 1. **Fork the repository**
 2. **Create feature branch**: `git checkout -b feature/your-feature`
@@ -265,11 +265,11 @@ S3_BUCKET=your-s3-bucket
 4. **Push to branch**: `git push origin feature/your-feature`
 5. **Create Pull Request**
 
-## 📄 License
+## License
 
 This project is designed for research use. Please ensure compliance with your institution's data handling and privacy requirements.
 
-## 🆘 Support
+## Support
 
 - **Documentation**: This README and inline code comments
 - **Issues**: Use GitHub issues for bug reports
@@ -277,5 +277,5 @@ This project is designed for research use. Please ensure compliance with your in
 
 ---
 
-**Built for Drowsiness Research** 🧠💤  
+**Built for Drowsiness Research**  
 *Professional KSS rating platform for objective sleepiness assessment* 
