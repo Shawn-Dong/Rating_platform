@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const passport = require('passport');
 require('dotenv').config();
 
 const database = require('./models/database');
@@ -23,6 +24,7 @@ const limiter = rateLimit({
 app.use(limiter);
 app.use(cors());
 app.use(express.json());
+app.use(passport.initialize());
 
 // Serve static images
 app.use('/images', express.static(path.join(__dirname, '../public/images')));
