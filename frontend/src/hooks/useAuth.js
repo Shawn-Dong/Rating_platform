@@ -126,6 +126,7 @@ export function AuthProvider({ children }) {
     register,
     logout,
     changePassword,
+    checkAuthStatus, // Expose checkAuthStatus
     isAdmin: user?.role === 'admin',
     isScorer: user?.role === 'scorer',
   };
@@ -151,6 +152,7 @@ export function useApi() {
     // Image-related endpoints
     getNextImage: () => axios.get('/images/next'),
     getProgress: () => axios.get('/images/progress'),
+    getImages: (params) => axios.get('/images/all', { params }),
     getImage: (imageId) => axios.get(`/images/${imageId}`),
     
     // Scoring endpoints

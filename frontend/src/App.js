@@ -10,6 +10,7 @@ import DashboardPage from './pages/DashboardPage';
 import ScoringPage from './pages/ScoringPage';
 import AdminDashboard from './pages/AdminDashboard';
 import ProfilePage from './pages/ProfilePage';
+import AuthCallbackPage from './pages/AuthCallbackPage';
 
 // Components
 import Layout from './components/Layout';
@@ -45,6 +46,7 @@ function AppRoutes() {
         path="/login" 
         element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />} 
       />
+      <Route path="/auth/callback" element={<AuthCallbackPage />} />
       
       {/* Protected Routes */}
       <Route path="/" element={<Layout />}>

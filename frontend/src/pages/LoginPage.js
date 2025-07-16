@@ -88,6 +88,27 @@ export default function LoginPage() {
             </div>
           </div>
         </form>
+
+        <div className="relative my-6">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-300" />
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-2 bg-gray-50 text-gray-500">Or continue with</span>
+          </div>
+        </div>
+
+        <div>
+          <a
+            href={`${process.env.REACT_APP_API_URL || 'http://localhost:3001'}/api/auth/google`}
+            className="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+          >
+            <svg className="w-5 h-5 mr-2" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+              <path fill="currentColor" d="M488 261.8C488 403.3 381.5 512 244 512 110.3 512 0 401.7 0 265.9c0-48.2 13.4-92.3 36.6-129.4l86.1 66.3C109.5 224.5 104 244.3 104 265.9c0 79.5 64.4 143.9 143.9 143.9 43.8 0 82.4-19.9 108.8-52.4l68.2 68.2C359.4 461.2 306.5 488 244 488c-119.1 0-216-96.9-216-216 0-49.3 16.4-94.5 43.8-130.5l-85.8-66.1C14.7 93.3 0 143.9 0 201.8c0 22.2 3.6 43.8 10.2 64.2h233.8v-94.2H244c-13.3 0-24-10.7-24-24s10.7-24 24-24h120c13.3 0 24 10.7 24 24v2z"></path>
+            </svg>
+            Sign in with Google
+          </a>
+        </div>
       </div>
     </div>
   );

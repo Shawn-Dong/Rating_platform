@@ -22,10 +22,11 @@ class Database {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
         email TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        role TEXT DEFAULT 'scorer',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        is_active BOOLEAN DEFAULT 1
+        password_hash TEXT,
+      role TEXT NOT NULL DEFAULT 'scorer',
+      is_active BOOLEAN NOT NULL DEFAULT 1,
+      google_id TEXT UNIQUE,
+      avatar_url TEXT,
       )`,
 
       // Images table for pictures to be scored

@@ -2,10 +2,52 @@ const express = require('express');
 const router = express.Router();
 const database = require('../models/database');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const multer = require('multer');
+const path = require('path');
+
+// Configure Multer for file uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'public/images/')
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname))
+  }
+});
+
+const upload = multer({ storage: storage });
 
 // All admin routes require authentication and admin role
 router.use(authenticateToken);
 router.use(requireAdmin);
+
+// Image Upload Route
+router.post('/images/upload', upload.single('image'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded.' });
+  }
+
+  const { originalname, filename } = req.file;
+  const imageUrl = `/images/${filename}`;
+
+  const query = 'INSERT INTO images (filename, original_name, s3_url) VALUES (?, ?, ?)';
+  database.getDb().run(query, [filename, originalname, imageUrl], function(err) {
+    if (err) {
+      console.error('Error saving image to database:', err.message);
+      return res.status(500).json({ error: 'Failed to save image information.' });
+    }
+    res.status(201).json({ 
+      message: 'Image uploaded successfully', 
+      image: { 
+        id: this.lastID, 
+        filename, 
+        originalname, 
+        url: imageUrl 
+      } 
+    });
+  });
+});
 
 // Get dashboard statistics
 router.get('/dashboard', (req, res) => {

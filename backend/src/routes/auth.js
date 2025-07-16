@@ -3,6 +3,51 @@ const bcrypt = require('bcryptjs');
 const router = express.Router();
 const database = require('../models/database');
 const { generateToken, authenticateToken, getUserById } = require('../middleware/auth');
+const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+
+// Passport.js Google OAuth2 Strategy
+passport.use(new GoogleStrategy({
+    clientID: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    callbackURL: "/api/auth/google/callback"
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    const db = database.getDb();
+    db.get('SELECT * FROM users WHERE google_id = ?', [profile.id], (err, user) => {
+      if (err) { return cb(err); }
+      if (user) { return cb(null, user); }
+
+      // Create a new user if not found
+      const newUser = {
+        google_id: profile.id,
+        username: profile.displayName,
+        email: profile.emails[0].value,
+        avatar_url: profile.photos[0].value
+      };
+
+      db.run('INSERT INTO users (google_id, username, email, avatar_url) VALUES (?, ?, ?, ?)',
+        [newUser.google_id, newUser.username, newUser.email, newUser.avatar_url],
+        function(err) {
+          if (err) { return cb(err); }
+          newUser.id = this.lastID;
+          return cb(null, newUser);
+        }
+      );
+    });
+  }
+));
+
+// Google Auth Routes
+router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+
+router.get('/google/callback', passport.authenticate('google', { failureRedirect: '/login', session: false }),
+  function(req, res) {
+    // Successful authentication, generate a JWT
+    const token = generateToken(req.user);
+    res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${token}`);
+  }
+);
 
 // Register new user
 router.post('/register', (req, res) => {
