@@ -40,12 +40,18 @@ function AppRoutes() {
     );
   }
 
+  // Determine default route based on user role
+  const getDefaultRoute = () => {
+    if (!user) return "/login";
+    return user.role === 'admin' ? "/admin" : "/dashboard";
+  };
+
   return (
     <Routes>
       {/* Public Routes */}
       <Route 
         path="/login" 
-        element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />} 
+        element={user ? <Navigate to={getDefaultRoute()} replace /> : <LoginPage />} 
       />
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
       
@@ -53,13 +59,13 @@ function AppRoutes() {
       <Route path="/" element={<Layout />}>
         <Route 
           index 
-          element={<Navigate to="/dashboard" replace />} 
+          element={<Navigate to={getDefaultRoute()} replace />} 
         />
         
         <Route 
           path="/dashboard" 
           element={
-            <ProtectedRoute>
+            <ProtectedRoute requireScorer>
               <DashboardPage />
             </ProtectedRoute>
           } 
@@ -68,7 +74,7 @@ function AppRoutes() {
         <Route 
           path="/score" 
           element={
-            <ProtectedRoute>
+            <ProtectedRoute requireScorer>
               <ScoringPage />
             </ProtectedRoute>
           } 
@@ -103,7 +109,7 @@ function AppRoutes() {
       </Route>
 
       {/* Catch all route */}
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Navigate to={getDefaultRoute()} replace />} />
     </Routes>
   );
 }

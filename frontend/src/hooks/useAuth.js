@@ -43,9 +43,11 @@ export function AuthProvider({ children }) {
     try {
       const response = await axios.get('/auth/me');
       setUser(response.data.user);
+      return response.data.user; // Return user data for redirect logic
     } catch (error) {
       console.error('Auth check failed:', error);
       logout();
+      return null;
     } finally {
       setLoading(false);
     }
@@ -67,7 +69,7 @@ export function AuthProvider({ children }) {
       setUser(user);
       
       toast.success(`Welcome back, ${user.username}!`);
-      return { success: true };
+      return { success: true, user };
     } catch (error) {
       const message = error.response?.data?.error || 'Login failed';
       toast.error(message);

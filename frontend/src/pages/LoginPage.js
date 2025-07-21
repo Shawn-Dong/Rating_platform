@@ -16,7 +16,9 @@ export default function LoginPage() {
     setIsLoading(false);
     
     if (result.success) {
-      navigate('/dashboard');
+      // Redirect based on user role after login
+      const defaultRoute = result.user?.role === 'admin' ? '/admin' : '/dashboard';
+      navigate(defaultRoute);
     }
   };
 

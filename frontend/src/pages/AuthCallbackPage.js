@@ -13,8 +13,10 @@ export default function AuthCallbackPage() {
 
     if (token) {
       localStorage.setItem('token', token);
-      checkAuthStatus().then(() => {
-        navigate('/dashboard');
+      checkAuthStatus().then((user) => {
+        // Redirect based on user role after OAuth callback
+        const defaultRoute = user?.role === 'admin' ? '/admin' : '/dashboard';
+        navigate(defaultRoute);
       });
     } else {
       navigate('/login');

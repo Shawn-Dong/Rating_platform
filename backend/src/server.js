@@ -21,7 +21,7 @@ const limiter = rateLimit({
 });
 
 // Middleware
-app.use(limiter);
+// app.use(limiter); // Temporarily disabled for development
 app.use(cors());
 app.use(express.json());
 app.use(passport.initialize());
