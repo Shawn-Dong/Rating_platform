@@ -11,6 +11,7 @@ import ScoringPage from './pages/ScoringPage';
 import AdminDashboard from './pages/AdminDashboard';
 import ProfilePage from './pages/ProfilePage';
 import AuthCallbackPage from './pages/AuthCallbackPage';
+import ImageDetailPage from './pages/ImageDetailPage';
 
 // Components
 import Layout from './components/Layout';
@@ -78,6 +79,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <ProfilePage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/images/:imageId" 
+          element={
+            <ProtectedRoute>
+              <ImageDetailPage />
             </ProtectedRoute>
           } 
         />

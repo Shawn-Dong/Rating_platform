@@ -151,7 +151,7 @@ router.get('/:imageId', authenticateToken, (req, res) => {
       return res.status(404).json({ error: 'Image not found or access denied' });
     }
 
-    // If admin, include scoring statistics
+    // If admin, include scoring statistics and all individual scores
     if (isAdmin) {
       const statsQuery = `
         SELECT 
@@ -163,15 +163,38 @@ router.get('/:imageId', authenticateToken, (req, res) => {
         WHERE image_id = ?
       `;
 
+      const individualScoresQuery = `
+        SELECT 
+          s.id as score_id,
+          u.username as scorer_username,
+          s.kss_score,
+          s.explanation,
+          s.additional_notes,
+          s.time_spent_seconds,
+          s.scored_at
+        FROM scores s
+        JOIN users u ON s.user_id = u.id
+        WHERE s.image_id = ?
+        ORDER BY s.scored_at DESC
+      `;
+
       database.getDb().get(statsQuery, [imageId], (err, stats) => {
         if (err) {
           console.error('Error fetching image stats:', err.message);
           return res.json({ image });
         }
 
-        res.json({ 
-          image, 
-          statistics: stats
+        database.getDb().all(individualScoresQuery, [imageId], (err, individualScores) => {
+          if (err) {
+            console.error('Error fetching individual scores:', err.message);
+            return res.json({ image, statistics: stats });
+          }
+
+          res.json({ 
+            image, 
+            statistics: stats,
+            individual_scores: individualScores
+          });
         });
       });
     } else {
