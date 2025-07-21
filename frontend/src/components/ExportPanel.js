@@ -116,7 +116,7 @@ export default function ExportPanel() {
       <div className="space-y-6">
         {/* Excel Export Section */}
         <div className="border rounded-lg p-4 bg-blue-50">
-          <h3 className="text-lg font-medium mb-3 text-blue-900">📊 Export to Excel</h3>
+          <h3 className="text-lg font-medium mb-3 text-blue-900">Export to Excel</h3>
           <p className="text-gray-600 mb-4">
             Export all scoring data to Excel spreadsheet, including user information, image details, KSS scores, explanations and complete data.
           </p>
@@ -131,7 +131,7 @@ export default function ExportPanel() {
 
         {/* LLM JSON Export Section */}
         <div className="border rounded-lg p-4 bg-green-50">
-          <h3 className="text-lg font-medium mb-3 text-green-900">🤖 AI Formatted Export</h3>
+          <h3 className="text-lg font-medium mb-3 text-green-900">AI Formatted Export</h3>
           <p className="text-gray-600 mb-4">
             Use LLM to reorganize and export data according to your specified JSON format. Requires OpenAI API Key.
           </p>
@@ -206,7 +206,7 @@ export default function ExportPanel() {
 
         {/* Tips Section */}
         <div className="border-l-4 border-yellow-400 bg-yellow-50 p-4">
-          <h4 className="font-medium text-yellow-800 mb-2">💡 Usage Tips</h4>
+          <h4 className="font-medium text-yellow-800 mb-2">Usage Tips</h4>
           <ul className="text-sm text-yellow-700 space-y-1">
             <li>• Excel export contains all raw data, suitable for direct data analysis</li>
             <li>• AI formatted export can reorganize data structure according to your needs</li>
