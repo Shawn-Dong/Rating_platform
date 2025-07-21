@@ -6,6 +6,7 @@ import ImageUpload from '../components/ImageUpload';
 import ImageList from '../components/ImageList';
 import Analytics from '../components/Analytics';
 import BulkAssignment from '../components/BulkAssignment';
+import ExportPanel from '../components/ExportPanel';
 
 function UserManagement() {
   const api = useApi();
@@ -137,6 +138,7 @@ export default function AdminDashboard() {
       </> },
     { id: 'assign', name: 'Bulk Assignment', component: <BulkAssignment /> },
     { id: 'analytics', name: 'Analytics', component: <Analytics /> },
+    { id: 'export', name: 'Data Export', component: <ExportPanel /> },
   ];
 
   return (

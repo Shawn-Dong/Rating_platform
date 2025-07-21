@@ -179,6 +179,14 @@ export function useApi() {
     bulkDeleteImages: (imageIds) => axios.delete('/admin/images/bulk-delete', {
       data: { imageIds }
     }),
+    // Export endpoints
+    exportExcel: () => axios.get('/admin/export/excel', { responseType: 'blob' }),
+    exportLLMJson: (apiKey, sampleFormat, includeExplanations = true) => 
+      axios.post('/admin/export/llm-json', { 
+        apiKey, 
+        sampleFormat, 
+        includeExplanations 
+      }, { responseType: 'blob' }),
   };
 
   return api;

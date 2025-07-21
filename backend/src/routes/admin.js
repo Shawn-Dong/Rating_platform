@@ -6,6 +6,8 @@ const multer = require('multer');
 const path = require('path');
 const AWS = require('aws-sdk');
 const { v4: uuidv4 } = require('uuid');
+const ExcelJS = require('exceljs');
+const OpenAI = require('openai');
 
 // Configure AWS S3
 const s3 = new AWS.S3({
@@ -669,5 +671,219 @@ function assignmentsBulkInsert(assignments, res) {
     });
   });
 }
+
+// Export as Excel
+router.get('/export/excel', (req, res) => {
+  const workbook = new ExcelJS.Workbook();
+  
+  // Get comprehensive scoring data
+  const query = `
+    SELECT 
+      u.username,
+      u.email,
+      u.role,
+      i.filename,
+      i.original_name,
+      i.dataset_name,
+      s.kss_score,
+      s.explanation,
+      s.additional_notes,
+      s.time_spent_seconds,
+      s.scored_at,
+      i.upload_date
+    FROM scores s
+    JOIN users u ON s.user_id = u.id
+    JOIN images i ON s.image_id = i.id
+    WHERE i.is_active = 1
+    ORDER BY s.scored_at DESC
+  `;
+
+  database.getDb().all(query, [], (err, scores) => {
+    if (err) {
+      console.error('Error fetching scores for export:', err.message);
+      return res.status(500).json({ error: 'Failed to export data' });
+    }
+
+    // Create worksheet
+    const worksheet = workbook.addWorksheet('KSS Scores');
+    
+    // Add headers
+    worksheet.columns = [
+      { header: 'Username', key: 'username', width: 15 },
+      { header: 'Email', key: 'email', width: 25 },
+      { header: 'Role', key: 'role', width: 10 },
+      { header: 'Image Filename', key: 'filename', width: 20 },
+      { header: 'Original Name', key: 'original_name', width: 25 },
+      { header: 'Dataset', key: 'dataset_name', width: 15 },
+      { header: 'KSS Score', key: 'kss_score', width: 12 },
+      { header: 'Explanation', key: 'explanation', width: 50 },
+      { header: 'Additional Notes', key: 'additional_notes', width: 30 },
+      { header: 'Time Spent (seconds)', key: 'time_spent_seconds', width: 18 },
+      { header: 'Scored At', key: 'scored_at', width: 20 },
+      { header: 'Image Upload Date', key: 'upload_date', width: 20 }
+    ];
+
+    // Add data
+    scores.forEach(score => {
+      worksheet.addRow(score);
+    });
+
+    // Style the header
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE6E6FA' }
+    };
+
+    // Set response headers
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=kss_scores_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+    // Write to response
+    workbook.xlsx.write(res).then(() => {
+      res.end();
+    }).catch(err => {
+      console.error('Error writing Excel file:', err);
+      res.status(500).json({ error: 'Failed to generate Excel file' });
+    });
+  });
+});
+
+// Export with LLM formatting
+router.post('/export/llm-json', async (req, res) => {
+  const { apiKey, sampleFormat, includeExplanations = true } = req.body;
+
+  if (!apiKey || !sampleFormat) {
+    return res.status(400).json({ 
+      error: 'API key and sample format are required' 
+    });
+  }
+
+  try {
+    // Initialize OpenAI client
+    const openai = new OpenAI({
+      apiKey: apiKey
+    });
+
+    // Get scoring data
+    const query = `
+      SELECT 
+        u.username,
+        i.filename,
+        i.original_name,
+        i.dataset_name,
+        s.kss_score,
+        s.explanation,
+        s.additional_notes,
+        s.time_spent_seconds,
+        s.scored_at
+      FROM scores s
+      JOIN users u ON s.user_id = u.id
+      JOIN images i ON s.image_id = i.id
+      WHERE i.is_active = 1
+      ORDER BY i.id, s.scored_at
+    `;
+
+    database.getDb().all(query, [], async (err, scores) => {
+      if (err) {
+        console.error('Error fetching scores for LLM export:', err.message);
+        return res.status(500).json({ error: 'Failed to fetch data' });
+      }
+
+      // Group scores by image
+      const groupedScores = {};
+      scores.forEach(score => {
+        if (!groupedScores[score.filename]) {
+          groupedScores[score.filename] = {
+            filename: score.filename,
+            original_name: score.original_name,
+            dataset_name: score.dataset_name,
+            scores: []
+          };
+        }
+        groupedScores[score.filename].scores.push({
+          username: score.username,
+          kss_score: score.kss_score,
+          explanation: includeExplanations ? score.explanation : undefined,
+          additional_notes: score.additional_notes,
+          time_spent_seconds: score.time_spent_seconds,
+          scored_at: score.scored_at
+        });
+      });
+
+      // Create prompt for LLM
+      const dataForLLM = Object.values(groupedScores).slice(0, 5); // First 5 images as sample
+      
+      const prompt = `You are a data analyst tasked with reformatting KSS (Karolinska Sleepiness Scale) scoring data into a specific JSON format.
+
+Here is the raw data from our rating platform:
+${JSON.stringify(dataForLLM, null, 2)}
+
+Please reformat ALL the provided data according to this exact sample format:
+${sampleFormat}
+
+Requirements:
+1. Follow the sample format structure EXACTLY
+2. Include all images and their associated scores
+3. Maintain data integrity - don't modify the actual scores or explanations
+4. If the sample format requires additional calculated fields (like averages, statistics), compute them accurately
+5. Return only the formatted JSON without any explanations
+
+Format ALL the data provided, not just a sample.`;
+
+      try {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: "You are a data formatting assistant. Return only valid JSON without any markdown formatting or explanations."
+            },
+            {
+              role: "user", 
+              content: prompt
+            }
+          ],
+          temperature: 0
+        });
+
+        const formattedData = completion.choices[0].message.content;
+        
+        // Try to parse to ensure valid JSON
+        let jsonData;
+        try {
+          jsonData = JSON.parse(formattedData);
+        } catch (parseErr) {
+          console.error('LLM returned invalid JSON:', parseErr);
+          return res.status(500).json({ 
+            error: 'LLM returned invalid JSON format',
+            raw_response: formattedData
+          });
+        }
+
+        // Set response headers for JSON file download
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename=kss_scores_formatted_${new Date().toISOString().split('T')[0]}.json`);
+        
+        res.json(jsonData);
+
+      } catch (llmError) {
+        console.error('OpenAI API error:', llmError);
+        return res.status(500).json({ 
+          error: 'Failed to process data with LLM',
+          details: llmError.message
+        });
+      }
+    });
+
+  } catch (error) {
+    console.error('Export error:', error);
+    res.status(500).json({ 
+      error: 'Failed to process export request',
+      details: error.message
+    });
+  }
+});
 
 module.exports = router; 
