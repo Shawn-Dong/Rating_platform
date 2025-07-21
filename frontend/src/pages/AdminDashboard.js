@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { useApi } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
@@ -85,7 +85,60 @@ function UserManagement() {
   );
 }
 
+function Overview() {
+  const api = useApi();
+  const { data: statsData, isLoading: statsLoading } = useQuery('adminDashboardStats', api.getDashboardStats);
+  const statistics = statsData?.data?.statistics || {};
+
+  if (statsLoading) {
+    return (
+      <div className="text-center py-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+        <p className="mt-2 text-gray-600">Loading overview...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="bg-white rounded-lg shadow-sm border p-6">
+        <h3 className="text-lg font-medium text-gray-900">Total Users</h3>
+        <p className="mt-1 text-3xl font-bold text-gray-900">{statistics.users}</p>
+      </div>
+      <div className="bg-white rounded-lg shadow-sm border p-6">
+        <h3 className="text-lg font-medium text-gray-900">Total Scorers</h3>
+        <p className="mt-1 text-3xl font-bold text-gray-900">{statistics.scorers}</p>
+      </div>
+      <div className="bg-white rounded-lg shadow-sm border p-6">
+        <h3 className="text-lg font-medium text-gray-900">Total Images</h3>
+        <p className="mt-1 text-3xl font-bold text-gray-900">{statistics.images}</p>
+      </div>
+      <div className="bg-white rounded-lg shadow-sm border p-6">
+        <h3 className="text-lg font-medium text-gray-900">Total Scores</h3>
+        <p className="mt-1 text-3xl font-bold text-gray-900">{statistics.scores}</p>
+      </div>
+      <div className="bg-white rounded-lg shadow-sm border p-6">
+        <h3 className="text-lg font-medium text-gray-900">Assignments Completion</h3>
+        <p className="mt-1 text-3xl font-bold text-gray-900">{statistics.completion_rate}%</p>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
+  const [activeTab, setActiveTab] = useState('overview');
+
+  const tabs = [
+    { id: 'overview', name: 'Overview', component: <Overview /> },
+    { id: 'users', name: 'User Management', component: <UserManagement /> },
+    { id: 'images', name: 'Image Management', component: <>
+        <ImageUpload />
+        <ImageList />
+      </> },
+    { id: 'assign', name: 'Bulk Assignment', component: <BulkAssignment /> },
+    { id: 'analytics', name: 'Analytics', component: <Analytics /> },
+  ];
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-8">
@@ -94,14 +147,29 @@ export default function AdminDashboard() {
           Manage users, assignments, and view analytics.
         </p>
       </div>
-      
-      <div className="space-y-8">
-        <BulkAssignment />
-        <Analytics />
-        <ImageUpload />
-        <ImageList />
-        <UserManagement />
-        {/* Other admin components will go here */}
+
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`
+                ${activeTab === tab.id
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }
+                whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
+              `}
+            >
+              {tab.name}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      <div className="mt-8 space-y-8">
+        {tabs.find(tab => tab.id === activeTab)?.component}
       </div>
     </div>
   );

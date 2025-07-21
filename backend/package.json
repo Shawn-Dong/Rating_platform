@@ -9,7 +9,7 @@
     "init-db": "node src/scripts/initDatabase.js"
   },
   "dependencies": {
-    "aws-sdk": "^2.1483.0",
+    "aws-sdk": "^2.1692.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -19,7 +19,8 @@
     "multer": "^1.4.5-lts.1",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
-    "sqlite3": "^5.1.6"
+    "sqlite3": "^5.1.6",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

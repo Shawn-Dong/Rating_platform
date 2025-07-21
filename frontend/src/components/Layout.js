@@ -24,26 +24,34 @@ export default function Layout() {
             </div>
             
             <div className="flex items-center space-x-4">
-              <img src="/umich_icon.jpeg" alt="UMich Icon" className="h-8 w-8" />
-              <Link 
-                to="/dashboard" 
-                className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
-              >
-                Dashboard
-              </Link>
-              <Link 
-                to="/score" 
-                className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
-              >
-                Score Images
-              </Link>
-              {isAdmin && (
+              {isAdmin ? (
                 <Link 
                   to="/admin" 
                   className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
                 >
                   Admin
                 </Link>
+              ) : (
+                <>
+                  <Link 
+                    to="/dashboard" 
+                    className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
+                  >
+                    Dashboard
+                  </Link>
+                  <Link 
+                    to="/score" 
+                    className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
+                  >
+                    Score Images
+                  </Link>
+                  <Link 
+                    to="/profile" 
+                    className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
+                  >
+                    Profile
+                  </Link>
+                </>
               )}
               <div className="flex items-center space-x-3">
                 <span className="text-sm text-gray-600">

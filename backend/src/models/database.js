@@ -26,7 +26,7 @@ class Database {
       role TEXT NOT NULL DEFAULT 'scorer',
       is_active BOOLEAN NOT NULL DEFAULT 1,
       google_id TEXT UNIQUE,
-      avatar_url TEXT,
+      avatar_url TEXT
       )`,
 
       // Images table for pictures to be scored

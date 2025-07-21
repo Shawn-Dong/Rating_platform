@@ -4,49 +4,312 @@ const database = require('../models/database');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const multer = require('multer');
 const path = require('path');
+const AWS = require('aws-sdk');
+const { v4: uuidv4 } = require('uuid');
 
-// Configure Multer for file uploads
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, 'public/images/')
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname))
-  }
+// Configure AWS S3
+const s3 = new AWS.S3({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  region: process.env.AWS_REGION || 'us-east-1'
 });
 
-const upload = multer({ storage: storage });
+// Configure Multer for memory storage (not disk)
+const storage = multer.memoryStorage();
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.'));
+    }
+  }
+});
 
 // All admin routes require authentication and admin role
 router.use(authenticateToken);
 router.use(requireAdmin);
 
-// Image Upload Route
-router.post('/images/upload', upload.single('image'), (req, res) => {
+// Helper function to upload file to S3
+const uploadToS3 = (fileBuffer, fileName, mimeType) => {
+  const params = {
+    Bucket: process.env.S3_BUCKET_NAME,
+    Key: `images/${fileName}`,
+    Body: fileBuffer,
+    ContentType: mimeType
+    // Note: Public access is handled by bucket policy, not ACL
+  };
+
+  return s3.upload(params).promise();
+};
+
+// Image Upload Route (Single)
+router.post('/images/upload', upload.single('image'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
   }
 
-  const { originalname, filename } = req.file;
-  const imageUrl = `/images/${filename}`;
+  try {
+    // Generate unique filename
+    const fileExtension = path.extname(req.file.originalname);
+    const uniqueFileName = `${uuidv4()}-${Date.now()}${fileExtension}`;
 
-  const query = 'INSERT INTO images (filename, original_name, s3_url) VALUES (?, ?, ?)';
-  database.getDb().run(query, [filename, originalname, imageUrl], function(err) {
-    if (err) {
-      console.error('Error saving image to database:', err.message);
-      return res.status(500).json({ error: 'Failed to save image information.' });
-    }
-    res.status(201).json({ 
-      message: 'Image uploaded successfully', 
-      image: { 
-        id: this.lastID, 
-        filename, 
-        originalname, 
-        url: imageUrl 
-      } 
+    // Upload to S3
+    const s3Result = await uploadToS3(
+      req.file.buffer, 
+      uniqueFileName, 
+      req.file.mimetype
+    );
+
+    // Save to database with S3 URL
+    const query = 'INSERT INTO images (filename, original_name, s3_url) VALUES (?, ?, ?)';
+    database.getDb().run(query, [uniqueFileName, req.file.originalname, s3Result.Location], function(err) {
+      if (err) {
+        console.error('Error saving image to database:', err.message);
+        return res.status(500).json({ error: 'Failed to save image information.' });
+      }
+      
+      res.status(201).json({ 
+        message: 'Image uploaded successfully to S3', 
+        image: { 
+          id: this.lastID, 
+          filename: uniqueFileName, 
+          originalname: req.file.originalname, 
+          url: s3Result.Location 
+        } 
+      });
     });
+
+  } catch (error) {
+    console.error('S3 upload error:', error);
+    res.status(500).json({ 
+      error: 'Failed to upload image to S3',
+      details: error.message 
+    });
+  }
+});
+
+// Bulk Image Upload Route (Multiple)
+router.post('/images/bulk-upload', upload.array('images', 20), async (req, res) => {
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).json({ error: 'No files uploaded.' });
+  }
+
+  const results = {
+    successful: [],
+    failed: [],
+    total: req.files.length
+  };
+
+  // Process each file
+  for (const file of req.files) {
+    try {
+      // Generate unique filename
+      const fileExtension = path.extname(file.originalname);
+      const uniqueFileName = `${uuidv4()}-${Date.now()}${fileExtension}`;
+
+      // Upload to S3
+      const s3Result = await uploadToS3(
+        file.buffer, 
+        uniqueFileName, 
+        file.mimetype
+      );
+
+      // Save to database with S3 URL
+      await new Promise((resolve, reject) => {
+        const query = 'INSERT INTO images (filename, original_name, s3_url) VALUES (?, ?, ?)';
+        database.getDb().run(query, [uniqueFileName, file.originalname, s3Result.Location], function(err) {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(this.lastID);
+          }
+        });
+      });
+
+      results.successful.push({
+        originalname: file.originalname,
+        filename: uniqueFileName,
+        url: s3Result.Location
+      });
+
+    } catch (error) {
+      console.error('Error uploading file:', file.originalname, error.message);
+      results.failed.push({
+        originalname: file.originalname,
+        error: error.message
+      });
+    }
+  }
+
+  res.json({
+    message: `Bulk upload completed: ${results.successful.length} successful, ${results.failed.length} failed`,
+    results
   });
+});
+
+// Delete Image Route (Soft Delete)
+router.delete('/images/:imageId', async (req, res) => {
+  const imageId = req.params.imageId;
+
+  if (!imageId || isNaN(imageId)) {
+    return res.status(400).json({ error: 'Valid image ID is required' });
+  }
+
+  try {
+    // First check if image exists and is active
+    const checkQuery = 'SELECT * FROM images WHERE id = ? AND is_active = 1';
+    
+    database.getDb().get(checkQuery, [imageId], (err, image) => {
+      if (err) {
+        console.error('Error checking image:', err.message);
+        return res.status(500).json({ error: 'Failed to check image' });
+      }
+
+      if (!image) {
+        return res.status(404).json({ error: 'Image not found or already deleted' });
+      }
+
+      // Soft delete: set is_active = 0
+      const deleteQuery = 'UPDATE images SET is_active = 0 WHERE id = ?';
+      
+      database.getDb().run(deleteQuery, [imageId], function(err) {
+        if (err) {
+          console.error('Error deleting image:', err.message);
+          return res.status(500).json({ error: 'Failed to delete image' });
+        }
+
+        if (this.changes === 0) {
+          return res.status(404).json({ error: 'Image not found' });
+        }
+
+        // Also update any pending assignments for this image to 'cancelled'
+        const updateAssignmentsQuery = `
+          UPDATE assignments 
+          SET status = 'cancelled' 
+          WHERE image_id = ? AND status = 'pending'
+        `;
+        
+        database.getDb().run(updateAssignmentsQuery, [imageId], (err) => {
+          if (err) {
+            console.error('Error updating assignments:', err.message);
+            // Don't fail the main operation, just log the error
+          }
+        });
+
+        res.json({ 
+          message: 'Image deleted successfully',
+          imageId: parseInt(imageId),
+          deletedImageInfo: {
+            filename: image.filename,
+            originalName: image.original_name
+          }
+        });
+      });
+    });
+
+  } catch (error) {
+    console.error('Error in delete image route:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Bulk Delete Images Route
+router.delete('/images/bulk-delete', async (req, res) => {
+  const { imageIds } = req.body;
+
+  if (!imageIds || !Array.isArray(imageIds) || imageIds.length === 0) {
+    return res.status(400).json({ error: 'imageIds array is required and cannot be empty' });
+  }
+
+  // Validate all IDs are numbers
+  const invalidIds = imageIds.filter(id => isNaN(id));
+  if (invalidIds.length > 0) {
+    return res.status(400).json({ error: 'All image IDs must be valid numbers' });
+  }
+
+  try {
+    const results = {
+      successful: [],
+      failed: [],
+      total: imageIds.length
+    };
+
+    // Process each image ID
+    for (const imageId of imageIds) {
+      try {
+        // Check if image exists and is active
+        const image = await new Promise((resolve, reject) => {
+          database.getDb().get('SELECT * FROM images WHERE id = ? AND is_active = 1', [imageId], (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+          });
+        });
+
+        if (!image) {
+          results.failed.push({
+            imageId: parseInt(imageId),
+            error: 'Image not found or already deleted'
+          });
+          continue;
+        }
+
+        // Soft delete the image
+        const deleteResult = await new Promise((resolve, reject) => {
+          database.getDb().run('UPDATE images SET is_active = 0 WHERE id = ?', [imageId], function(err) {
+            if (err) reject(err);
+            else resolve(this.changes);
+          });
+        });
+
+        if (deleteResult === 0) {
+          results.failed.push({
+            imageId: parseInt(imageId),
+            error: 'Failed to delete image'
+          });
+          continue;
+        }
+
+        // Update assignments for this image
+        database.getDb().run(
+          'UPDATE assignments SET status = "cancelled" WHERE image_id = ? AND status = "pending"',
+          [imageId],
+          (err) => {
+            if (err) {
+              console.error(`Error updating assignments for image ${imageId}:`, err.message);
+            }
+          }
+        );
+
+        results.successful.push({
+          imageId: parseInt(imageId),
+          filename: image.filename,
+          originalName: image.original_name
+        });
+
+      } catch (error) {
+        console.error(`Error processing image ${imageId}:`, error.message);
+        results.failed.push({
+          imageId: parseInt(imageId),
+          error: error.message
+        });
+      }
+    }
+
+    res.json({
+      message: `Bulk delete completed: ${results.successful.length} successful, ${results.failed.length} failed`,
+      results
+    });
+
+  } catch (error) {
+    console.error('Error in bulk delete route:', error);
+    res.status(500).json({ error: 'Internal server error during bulk delete' });
+  }
 });
 
 // Get dashboard statistics

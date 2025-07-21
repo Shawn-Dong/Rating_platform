@@ -26,8 +26,8 @@ app.use(cors());
 app.use(express.json());
 app.use(passport.initialize());
 
-// Serve static images
-app.use('/images', express.static(path.join(__dirname, '../public/images')));
+// Serve static images (legacy - now using S3)
+// app.use('/images', express.static(path.join(__dirname, '../public/images')));
 
 // Routes
 app.use('/api/auth', authRoutes);

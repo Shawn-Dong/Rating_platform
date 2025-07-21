@@ -169,6 +169,16 @@ export function useApi() {
     getReliability: () => axios.get('/admin/analytics/reliability'),
     exportScores: () => axios.get('/admin/export/scores'),
     bulkAssign: (assignmentData) => axios.post('/admin/bulk-assign', assignmentData),
+    uploadImage: (formData) => axios.post('/admin/images/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    }),
+    bulkUploadImages: (formData) => axios.post('/admin/images/bulk-upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    }),
+    deleteImage: (imageId) => axios.delete(`/admin/images/${imageId}`),
+    bulkDeleteImages: (imageIds) => axios.delete('/admin/images/bulk-delete', {
+      data: { imageIds }
+    }),
   };
 
   return api;
