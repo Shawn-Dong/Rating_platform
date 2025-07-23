@@ -6,48 +6,67 @@ const { generateToken, authenticateToken, getUserById } = require('../middleware
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 
-// Passport.js Google OAuth2 Strategy
-passport.use(new GoogleStrategy({
-    clientID: process.env.GOOGLE_CLIENT_ID,
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    callbackURL: "http://localhost:3001/api/auth/google/callback"
-  },
-  function(accessToken, refreshToken, profile, cb) {
-    const db = database.getDb();
-    db.get('SELECT * FROM users WHERE google_id = ?', [profile.id], (err, user) => {
-      if (err) { return cb(err); }
-      if (user) { return cb(null, user); }
+// Passport.js Google OAuth2 Strategy (only if credentials are provided)
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  passport.use(new GoogleStrategy({
+      clientID: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      callbackURL: "http://localhost:3001/api/auth/google/callback"
+    },
+    function(accessToken, refreshToken, profile, cb) {
+      const db = database.getDb();
+      db.get('SELECT * FROM users WHERE google_id = ?', [profile.id], (err, user) => {
+        if (err) { return cb(err); }
+        if (user) { return cb(null, user); }
 
-      // Create a new user if not found
-      const newUser = {
-        google_id: profile.id,
-        username: profile.displayName,
-        email: profile.emails[0].value,
-        avatar_url: profile.photos[0].value
-      };
+        // Create a new user if not found
+        const newUser = {
+          google_id: profile.id,
+          username: profile.displayName,
+          email: profile.emails[0].value,
+          avatar_url: profile.photos[0].value
+        };
 
-      db.run('INSERT INTO users (google_id, username, email, avatar_url) VALUES (?, ?, ?, ?)',
-        [newUser.google_id, newUser.username, newUser.email, newUser.avatar_url],
-        function(err) {
-          if (err) { return cb(err); }
-          newUser.id = this.lastID;
-          return cb(null, newUser);
-        }
-      );
+        db.run('INSERT INTO users (google_id, username, email, avatar_url) VALUES (?, ?, ?, ?)',
+          [newUser.google_id, newUser.username, newUser.email, newUser.avatar_url],
+          function(err) {
+            if (err) { return cb(err); }
+            newUser.id = this.lastID;
+            return cb(null, newUser);
+          }
+        );
+      });
+    }
+  ));
+}
+
+// Google Auth Routes (only if Google OAuth is configured)
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+
+  router.get('/google/callback', passport.authenticate('google', { failureRedirect: '/login', session: false }),
+    function(req, res) {
+      // Successful authentication, generate a JWT
+      const token = generateToken(req.user);
+      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/callback?token=${token}`);
+    }
+  );
+} else {
+  // Return error if Google OAuth is not configured
+  router.get('/google', (req, res) => {
+    res.status(503).json({ 
+      error: 'Google OAuth not configured', 
+      message: 'Google login is currently unavailable. Please contact the administrator.' 
     });
-  }
-));
-
-// Google Auth Routes
-router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-
-router.get('/google/callback', passport.authenticate('google', { failureRedirect: '/login', session: false }),
-  function(req, res) {
-    // Successful authentication, generate a JWT
-    const token = generateToken(req.user);
-    res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${token}`);
-  }
-);
+  });
+  
+  router.get('/google/callback', (req, res) => {
+    res.status(503).json({ 
+      error: 'Google OAuth not configured', 
+      message: 'Google login is currently unavailable. Please contact the administrator.' 
+    });
+  });
+}
 
 // Register new user
 router.post('/register', (req, res) => {
