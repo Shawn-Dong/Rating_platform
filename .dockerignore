@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files
+.env*
+!.env.example
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# Build outputs
+dist/
+build/
+.next/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Images (if sensitive)
+backend/public/images/
+*.jpg
+*.jpeg
+*.png
+*.gif
+
+# Documentation
+README.md
+docs/
+
+# Scripts
+scripts/
+
+# Test files
+test/
+*.test.js
+coverage/ 

@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  # Backend API
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: kss-backend
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DB_PATH=/app/database/kss_rating.db
+    env_file:
+      - .env.production
+    volumes:
+      - db_data:/app/database
+      - ./logs:/app/logs
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - kss-network
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: kss-frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - kss-network
+
+  # PostgreSQL Database (for production)
+  postgres:
+    image: postgres:15-alpine
+    container_name: kss-postgres
+    environment:
+      - POSTGRES_DB=kss_rating
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - kss-network
+
+  # Redis for session management (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: kss-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - kss-network
+
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: kss-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - frontend
+      - backend
+    restart: unless-stopped
+    networks:
+      - kss-network
+
+volumes:
+  db_data:
+  postgres_data:
+  redis_data:
+
+networks:
+  kss-network:
+    driver: bridge 

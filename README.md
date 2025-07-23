@@ -15,14 +15,22 @@ This platform enables researchers to:
 
 ## Recent Updates (Latest)
 
-### 🆕 **Enhanced Image Management & Cloud Integration**
+### **Production-Ready Deployment**
+- **Docker Containerization**: Complete Docker setup with multi-service orchestration
+- **Production Security**: Enhanced security headers, rate limiting, HTTPS configuration
+- **Automated Deployment**: Scripts for deployment, monitoring, and backup
+- **Database Migration**: PostgreSQL support for production environments
+- **Nginx Reverse Proxy**: Production-grade web server configuration
+- **Health Monitoring**: Automated health checks and alerting system
+
+### **Enhanced Image Management & Cloud Integration**
 - **AWS S3 Integration**: Professional cloud storage for scalable image hosting
 - **Bulk Image Operations**: Upload and delete multiple images simultaneously (up to 20 at once)
 - **Smart Delete System**: Soft delete with automatic assignment cleanup
 - **Enhanced UI**: Cleaner interface with improved file name display
 - **Selection Mode**: Checkbox-based bulk selection for efficient management
 
-### 🆕 **Role-Based User Experience**
+### **Role-Based User Experience**
 - **Smart Redirects**: Admins go directly to management dashboard, scorers to scoring interface  
 - **Optimized Navigation**: Role-aware home pages and navigation flows
 - **Streamlined Login**: Automatic role detection and appropriate interface loading
@@ -61,15 +69,16 @@ assignments (id, user_id, image_id, status, assigned_at, completed_at)
 
 ### **Infrastructure & Deployment**
 - **Development**: Local development with npm/nodemon
+- **Production**: **Complete Docker containerization**
 - **Image Storage**: **AWS S3** (cloud-first architecture)
-- **File Processing**: Multer with memory storage for cloud uploads
-- **CDN**: AWS CloudFront for global image delivery
-- **Recommended Production**: AWS (EC2 + RDS + S3) or AWS Lightsail
-- **Containerization**: Docker ready (Dockerfile included)
+- **Web Server**: **Nginx reverse proxy** with SSL/TLS
+- **Database**: **PostgreSQL** for production scalability
+- **Monitoring**: **Automated health checks** and alerting
+- **Security**: **Production-hardened** with rate limiting and security headers
 
 ## Features
 
-### **🆕 Enhanced Image Management**
+### **Enhanced Image Management**
 - **Cloud Storage**: AWS S3 integration for professional file management
 - **Bulk Upload**: Upload up to 20 images simultaneously with progress tracking
 - **Smart Delete System**: 
@@ -80,7 +89,7 @@ assignments (id, user_id, image_id, status, assigned_at, completed_at)
 - **Enhanced UI**: Clean interface prioritizing meaningful file names
 - **File Management**: Professional-grade image library with grid view
 
-### **🆕 Role-Based User Experience**
+### **Role-Based User Experience**
 - **Smart Navigation**: Automatic redirection based on user role
   - **Admins**: Direct access to management dashboard
   - **Scorers**: Streamlined scoring interface
@@ -111,12 +120,14 @@ assignments (id, user_id, image_id, status, assigned_at, completed_at)
 
 - **Node.js** 18+ 
 - **npm** or **yarn**
-- **SQLite** (included with Node.js)
+- **Docker** 20.10+ (for production deployment)
+- **Docker Compose** 2.0+ (for production deployment)
 - **AWS Account** (for S3 storage - production recommended)
 
 ## Quick Start
 
-### 1. **Clone and Install**
+### Development Mode
+
 ```bash
 git clone <repository-url>
 cd Rating_platform
@@ -130,9 +141,7 @@ cd ../frontend
 npm install
 ```
 
-### 2. **Environment Setup**
-
-#### **Backend Environment (.env in backend/)**
+#### Backend Environment (.env in backend/)
 ```bash
 # Server Configuration
 NODE_ENV=development
@@ -152,25 +161,18 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret
 FRONTEND_URL=http://localhost:3000
 ```
 
-#### **Frontend Environment (.env in frontend/)**
+#### Frontend Environment (.env in frontend/)
 ```bash
 REACT_APP_API_URL=http://localhost:3001/api
 ```
 
-### 3. **AWS S3 Setup** 
-```bash
-# Create S3 bucket and configure IAM permissions
-# Bucket policy should allow public read access for images
-# IAM user needs s3:PutObject, s3:DeleteObject permissions
-```
-
-### 4. **Initialize Database**
+#### Initialize Database
 ```bash
 cd backend
 npm run init-db    # Creates tables and sample data
 ```
 
-### 5. **Start Development Servers**
+#### Start Development Servers
 
 **Terminal 1 - Backend:**
 ```bash
@@ -184,11 +186,75 @@ cd frontend
 npm start          # Runs on http://localhost:3000
 ```
 
-### 6. **Access the Platform**
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:3001
+### Production Deployment
+
+#### Quick Production Start
+```bash
+# Clone and setup
+git clone <repository-url>
+cd Rating_platform
+
+# Configure environment
+cp .env.example .env.production
+# Edit .env.production with your production values
+
+# Deploy with one command
+./scripts/deploy.sh production
+```
+
+#### Manual Production Setup
+```bash
+# Create production environment
+cp .env.example .env.production
+
+# Start services
+docker-compose up -d
+
+# Initialize database
+docker-compose exec backend npm run init-db
+
+# Monitor status
+./scripts/monitor.sh status
+```
+
+### Access the Platform
+- **Frontend**: http://localhost:3000 (dev) / http://your-domain.com (prod)
+- **Backend API**: http://localhost:3001 (dev) / http://your-domain.com/api (prod)
 - **Default Admin**: `admin` / `admin123` (redirects to admin dashboard)
 - **Default Scorer**: `scorer1` / `scorer123` (redirects to scoring interface)
+
+## Production Deployment Features
+
+### Docker Containerization
+- **Multi-service orchestration** with Docker Compose
+- **Automated image building** and deployment
+- **Health checks** for all services
+- **Volume management** for persistent data
+- **Network isolation** for security
+
+### Security Configuration
+- **HTTPS/TLS** termination with Nginx
+- **Security headers** (HSTS, XSS protection, etc.)
+- **Rate limiting** on API endpoints
+- **CORS** configuration
+- **Database security** with proper authentication
+
+### Monitoring and Maintenance
+- **Automated health checks** for all services
+- **Log aggregation** and rotation
+- **Backup scripts** for database and configuration
+- **Monitoring dashboard** with real-time status
+- **Alert system** for failures
+
+### Deployment Scripts
+```bash
+# Available scripts in ./scripts/
+./deploy.sh     # Full deployment process
+./start.sh      # Start services
+./stop.sh       # Stop services
+./backup.sh     # Backup database and config
+./monitor.sh    # Health monitoring dashboard
+```
 
 ## Project Structure
 
@@ -200,42 +266,44 @@ Rating_platform/
 │   │   ├── middleware/      # Auth, validation
 │   │   ├── models/          # Database models
 │   │   ├── routes/          # API endpoints
-│   │   │   ├── admin.js     # 🆕 Enhanced with S3 & bulk operations
-│   │   │   ├── auth.js      # 🆕 Role-based redirects
-│   │   │   ├── images.js    # Image management
-│   │   │   └── scores.js    # Scoring endpoints
 │   │   └── server.js        # Express app
 │   ├── scripts/
-│   │   ├── init-db.js       # Database initialization
-│   │   └── load-images.js   # Image import utility
+│   │   └── initDatabase.js  # Database initialization
 │   ├── database/            # SQLite files
-│   └── package.json
+│   └── Dockerfile           # Backend container
 ├── frontend/
 │   ├── src/
-│   │   ├── components/      
-│   │   │   ├── ImageList.js     # 🆕 Bulk selection & delete
-│   │   │   ├── ImageUpload.js   # 🆕 Bulk upload support
-│   │   │   ├── Analytics.js     # 🆕 Training data viewer
-│   │   │   └── ...
-│   │   ├── hooks/           # Custom hooks (auth, API)
-│   │   ├── pages/           
-│   │   │   ├── AdminDashboard.js # 🆕 Enhanced management
-│   │   │   ├── LoginPage.js      # 🆕 Role-based redirects
-│   │   │   └── ...
+│   │   ├── components/      # React components
+│   │   ├── hooks/           # Custom hooks
+│   │   ├── pages/           # Application pages
 │   │   └── styles/          # Tailwind CSS
-│   ├── public/              # Static assets
-│   └── package.json
-└── README.md
+│   ├── Dockerfile           # Frontend container
+│   └── nginx.conf           # Frontend web server
+├── nginx/
+│   └── nginx.conf           # Production reverse proxy
+├── database/
+│   └── init.sql             # PostgreSQL initialization
+├── scripts/
+│   ├── deploy.sh            # Deployment automation
+│   ├── start.sh             # Start services
+│   ├── stop.sh              # Stop services
+│   ├── backup.sh            # Backup utility
+│   └── monitor.sh           # Health monitoring
+├── docker-compose.yml       # Service orchestration
+├── Dockerfile               # Backend container
+├── .dockerignore            # Docker ignore rules
+└── docs/
+    └── deployment-guide.md  # Detailed deployment guide
 ```
 
 ## API Endpoints
 
 ### **Authentication**
 ```
-POST /api/auth/login     # User login (🆕 role-based redirects)
+POST /api/auth/login     # User login (role-based redirects)
 POST /api/auth/register  # User registration
 GET  /api/auth/profile   # Get user profile
-GET  /api/auth/google    # 🆕 Google OAuth login
+GET  /api/auth/google    # Google OAuth login
 ```
 
 ### **Images**
@@ -246,7 +314,7 @@ GET  /api/images/:id        # Get specific image
 GET  /api/images/all        # Get all images (admin)
 ```
 
-### **🆕 Enhanced Image Management (Admin)**
+### **Enhanced Image Management (Admin)**
 ```
 POST   /api/admin/images/upload      # Single image upload to S3
 POST   /api/admin/images/bulk-upload # Bulk image upload (up to 20)
@@ -268,27 +336,6 @@ POST /api/admin/bulk-assign  # Assign images to users
 GET  /api/admin/export/scores # Export CSV data
 ```
 
-## 🆕 Enhanced UI Components
-
-### **Image Management Interface**
-- **Bulk Upload**: Drag & drop or multi-select up to 20 images
-- **Selection Mode**: Checkbox-based bulk operations
-- **Smart Display**: Prioritizes meaningful file names over system names
-- **Delete Controls**: Hover-based single delete + bulk delete options
-- **Confirmation Dialogs**: Safety checks for destructive operations
-
-### **Role-Based Navigation**
-- **Admin Dashboard**: Direct access to management tools
-- **Scorer Interface**: Streamlined scoring workflow
-- **Smart Redirects**: Automatic role detection and routing
-
-### **Scoring Interface**
-- Visual KSS scale (1-9) with descriptions
-- Image display with zoom/pan capabilities
-- Required explanation text area
-- Progress tracking bar
-- Time measurement display
-
 ## Security Features
 
 - **JWT Authentication** with secure token storage
@@ -297,7 +344,10 @@ GET  /api/admin/export/scores # Export CSV data
 - **CORS Configuration** for cross-origin requests
 - **Input Validation** on all endpoints
 - **Role-based Access Control**
-- **🆕 S3 Security**: Secure file uploads with signed URLs
+- **S3 Security**: Secure file uploads with signed URLs
+- **HTTPS/TLS**: SSL certificate management
+- **Security Headers**: XSS protection, HSTS, frame options
+- **Production Hardening**: Environment-specific security configs
 
 ## Database Design
 
@@ -308,16 +358,17 @@ The platform uses a relational database design optimized for research data colle
 - **Scores table**: KSS ratings with explanations and timing
 - **Assignments table**: Work distribution and progress tracking
 
-## Production Deployment
+## Production Deployment Options
 
-### **🆕 Enhanced AWS Setup**
+### AWS Setup (Recommended)
 - **EC2 t3.small**: Application server ($15/month)
 - **RDS PostgreSQL**: Database ($12/month)  
 - **S3**: Image storage with CloudFront CDN ($5-15/month)
 - **CloudFront**: Fast global image delivery (included)
+- **Route 53**: DNS management ($0.50/month)
 - **Total**: ~$45-60/month
 
-### **🆕 Environment Variables (Production)**
+### Environment Variables (Production)
 ```bash
 # Server
 NODE_ENV=production
@@ -341,21 +392,31 @@ FRONTEND_URL=https://yourdomain.com
 
 ## Scaling Considerations
 
-- **Database**: Migrate SQLite → PostgreSQL for production
-- **File Storage**: ✅ **Already using AWS S3** for cloud-scale storage
-- **CDN**: Use AWS CloudFront for global delivery
-- **Caching**: Add Redis for session management
-- **Load Balancing**: Use AWS ALB for high availability
-- **Monitoring**: Implement CloudWatch or similar
+- **Database**: PostgreSQL with read replicas
+- **File Storage**: Already using AWS S3 for cloud-scale storage
+- **CDN**: AWS CloudFront for global delivery
+- **Caching**: Redis for session management
+- **Load Balancing**: AWS ALB for high availability
+- **Monitoring**: CloudWatch or similar
+- **Containerization**: Already Docker-ready for Kubernetes
 
 ## Development Tools
 
 - **Backend Hot Reload**: nodemon
 - **Frontend Hot Reload**: React Fast Refresh
-- **Database Tool**: sqlite3 CLI or DB Browser
+- **Database Tool**: sqlite3 CLI or DB Browser (dev), pgAdmin (prod)
 - **API Testing**: Built-in health check endpoint
 - **AWS CLI**: For S3 bucket management
-- **Debugging**: Console logging with timestamps
+- **Docker**: For containerized development
+- **Monitoring**: Built-in monitoring dashboard
+
+## Documentation
+
+- **Deployment Guide**: `docs/deployment-guide.md`
+- **API Documentation**: Embedded in code
+- **Environment Setup**: `docs/environment-setup.md`
+- **How to Run**: `docs/how-to-run.md`
+- **Current Status**: `docs/current-status.md`
 
 ## Contributing
 
@@ -374,8 +435,9 @@ This project is designed for research use. Please ensure compliance with your in
 - **Documentation**: This README and inline code comments
 - **Issues**: Use GitHub issues for bug reports
 - **Research Use**: Contact for academic collaboration
+- **Deployment Help**: See `docs/deployment-guide.md`
 
 ---
 
 **Built for Drowsiness Research**  
-*Professional KSS rating platform for objective sleepiness assessment with enterprise-grade image management* 
+*Professional KSS rating platform for objective sleepiness assessment with enterprise-grade image management and production-ready deployment* 
