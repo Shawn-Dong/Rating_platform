@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const database = require('../models/database');
-const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { authenticateToken, requireAdmin, requireScorerOrGuest } = require('../middleware/auth');
 
 // Get next image for user to score
-router.get('/next', authenticateToken, (req, res) => {
+router.get('/next', authenticateToken, requireScorerOrGuest, (req, res) => {
   const user_id = req.user.id;
   
   // Find next unscored assigned image
@@ -39,17 +39,17 @@ router.get('/next', authenticateToken, (req, res) => {
 });
 
 // Get user's scoring progress
-router.get('/progress', authenticateToken, (req, res) => {
+router.get('/progress', authenticateToken, requireScorerOrGuest, (req, res) => {
   const user_id = req.user.id;
   
   const progressQuery = `
     SELECT 
       COUNT(a.id) as total_assigned,
       COUNT(s.id) as completed,
-      COUNT(a.id) - COUNT(s.id) as remaining
+      (COUNT(a.id) - COUNT(s.id)) as remaining
     FROM assignments a
     LEFT JOIN scores s ON (s.user_id = a.user_id AND s.image_id = a.image_id)
-    WHERE a.user_id = ?
+    WHERE a.user_id = ? AND a.status IN ('pending', 'completed')
   `;
 
   database.getDb().get(progressQuery, [user_id], (err, progress) => {
@@ -71,135 +71,96 @@ router.get('/progress', authenticateToken, (req, res) => {
   });
 });
 
-// Get list of images with scoring status (admin only)
+// Get all images (admin only)
 router.get('/all', authenticateToken, requireAdmin, (req, res) => {
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 20;
+  const { page = 1, limit = 20, search = '' } = req.query;
   const offset = (page - 1) * limit;
 
-  const query = `
+  let whereClause = 'WHERE i.is_active = 1';
+  let queryParams = [];
+
+  if (search) {
+    whereClause += ' AND (i.filename LIKE ? OR i.original_name LIKE ?)';
+    queryParams.push(`%${search}%`, `%${search}%`);
+  }
+
+  const countQuery = `SELECT COUNT(*) as total FROM images i ${whereClause}`;
+  
+  const dataQuery = `
     SELECT 
       i.*,
-      COUNT(DISTINCT a.user_id) as assigned_to,
-      COUNT(DISTINCT s.user_id) as scored_by,
-      AVG(s.kss_score) as avg_score
+      u.username as uploaded_by_username,
+      COUNT(DISTINCT a.user_id) as assigned_users,
+      COUNT(DISTINCT s.user_id) as scored_by_users
     FROM images i
+    LEFT JOIN users u ON i.uploaded_by = u.id
     LEFT JOIN assignments a ON i.id = a.image_id
     LEFT JOIN scores s ON i.id = s.image_id
-    WHERE i.is_active = 1
+    ${whereClause}
     GROUP BY i.id
     ORDER BY i.upload_date DESC
     LIMIT ? OFFSET ?
   `;
 
-  database.getDb().all(query, [limit, offset], (err, images) => {
+  // Get total count
+  database.getDb().get(countQuery, queryParams, (err, countResult) => {
     if (err) {
-      console.error('Error fetching images:', err.message);
-      return res.status(500).json({ error: 'Failed to fetch images' });
+      console.error('Count query error:', err.message);
+      return res.status(500).json({ error: 'Failed to fetch image count' });
     }
 
-    // Get total count
-    const countQuery = 'SELECT COUNT(*) as total FROM images WHERE is_active = 1';
-    database.getDb().get(countQuery, [], (err, countResult) => {
+    // Get data
+    database.getDb().all(dataQuery, [...queryParams, parseInt(limit), offset], (err, images) => {
       if (err) {
-        console.error('Error counting images:', err.message);
-        return res.status(500).json({ error: 'Failed to count images' });
+        console.error('Data query error:', err.message);
+        return res.status(500).json({ error: 'Failed to fetch images' });
       }
 
       res.json({
         images,
         pagination: {
-          page,
-          limit,
-          total: countResult.total,
-          pages: Math.ceil(countResult.total / limit)
+          current_page: parseInt(page),
+          total_pages: Math.ceil(countResult.total / limit),
+          total_items: countResult.total,
+          items_per_page: parseInt(limit)
         }
       });
     });
   });
 });
 
-// Get specific image details (for admin or if user has access)
-router.get('/:imageId', authenticateToken, (req, res) => {
-  const imageId = req.params.imageId;
+// Get specific image (for scoring interface)
+router.get('/:imageId', authenticateToken, requireScorerOrGuest, (req, res) => {
+  const { imageId } = req.params;
   const user_id = req.user.id;
-  const isAdmin = req.user.role === 'admin';
 
-  // Check if user has access to this image
-  let accessQuery;
-  let queryParams;
+  // Check if user has access to this image (through assignment)
+  const accessQuery = `
+    SELECT 
+      i.*,
+      a.assigned_at,
+      s.id as score_id,
+      s.kss_score,
+      s.explanation,
+      s.time_spent_seconds,
+      s.created_at as scored_at
+    FROM images i
+    JOIN assignments a ON i.id = a.image_id
+    LEFT JOIN scores s ON (s.user_id = a.user_id AND s.image_id = a.image_id)
+    WHERE i.id = ? AND a.user_id = ? AND i.is_active = 1
+  `;
 
-  if (isAdmin) {
-    accessQuery = 'SELECT * FROM images WHERE id = ? AND is_active = 1';
-    queryParams = [imageId];
-  } else {
-    accessQuery = `
-      SELECT i.* FROM images i
-      JOIN assignments a ON i.id = a.image_id
-      WHERE i.id = ? AND a.user_id = ? AND i.is_active = 1
-    `;
-    queryParams = [imageId, user_id];
-  }
-
-  database.getDb().get(accessQuery, queryParams, (err, image) => {
+  database.getDb().get(accessQuery, [imageId, user_id], (err, image) => {
     if (err) {
       console.error('Error fetching image:', err.message);
       return res.status(500).json({ error: 'Failed to fetch image' });
     }
 
     if (!image) {
-      return res.status(404).json({ error: 'Image not found or access denied' });
+      return res.status(404).json({ error: 'Image not found or not assigned to user' });
     }
 
-    // If admin, include scoring statistics and all individual scores
-    if (isAdmin) {
-      const statsQuery = `
-        SELECT 
-          COUNT(*) as total_scores,
-          AVG(kss_score) as avg_score,
-          MIN(kss_score) as min_score,
-          MAX(kss_score) as max_score
-        FROM scores 
-        WHERE image_id = ?
-      `;
-
-      const individualScoresQuery = `
-        SELECT 
-          s.id as score_id,
-          u.username as scorer_username,
-          s.kss_score,
-          s.explanation,
-          s.additional_notes,
-          s.time_spent_seconds,
-          s.scored_at
-        FROM scores s
-        JOIN users u ON s.user_id = u.id
-        WHERE s.image_id = ?
-        ORDER BY s.scored_at DESC
-      `;
-
-      database.getDb().get(statsQuery, [imageId], (err, stats) => {
-        if (err) {
-          console.error('Error fetching image stats:', err.message);
-          return res.json({ image });
-        }
-
-        database.getDb().all(individualScoresQuery, [imageId], (err, individualScores) => {
-          if (err) {
-            console.error('Error fetching individual scores:', err.message);
-            return res.json({ image, statistics: stats });
-          }
-
-          res.json({ 
-            image, 
-            statistics: stats,
-            individual_scores: individualScores
-          });
-        });
-      });
-    } else {
-      res.json({ image });
-    }
+    res.json({ image });
   });
 });
 
@@ -262,7 +223,7 @@ router.post('/auto-assign', authenticateToken, requireAdmin, (req, res) => {
   }
 
   // Get all active scorers
-  const getUsersQuery = "SELECT id FROM users WHERE role = 'scorer' AND is_active = 1";
+  const getUsersQuery = "SELECT id FROM users WHERE role = 'guest'";
   
   database.getDb().all(getUsersQuery, [], (err, users) => {
     if (err) {

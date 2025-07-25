@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { useApi } from '../hooks/useAuth';
+import { useApi, useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
-import ImageUpload from '../components/ImageUpload';
-import ImageList from '../components/ImageList';
+import Image from '../components/Image';
 import Analytics from '../components/Analytics';
 import BulkAssignment from '../components/BulkAssignment';
 import ExportPanel from '../components/ExportPanel';
+import GuestAccessManager from '../components/GuestAccessManager';
 
 function UserManagement() {
   const api = useApi();
   const queryClient = useQueryClient();
+  const { user: currentUser } = useAuth();
 
   const { data: usersData, isLoading: usersLoading } = useQuery('adminUsers', api.getUsers);
   const users = usersData?.data?.users || [];
@@ -28,8 +29,36 @@ function UserManagement() {
     }
   );
 
+  const deleteUserMutation = useMutation(
+    (userId) => api.deleteUser(userId),
+    {
+      onSuccess: (data) => {
+        toast.success(data.data.message);
+        queryClient.invalidateQueries('adminUsers');
+      },
+      onError: (error) => {
+        toast.error(error.response?.data?.error || 'Failed to delete user');
+      },
+    }
+  );
+
   const handleStatusToggle = (userId, currentStatus) => {
     updateUserStatusMutation.mutate({ userId, isActive: !currentStatus });
+  };
+
+  const handleDeleteUser = (user) => {
+    if (user.id === currentUser?.id) {
+      toast.error('Cannot delete your own account');
+      return;
+    }
+
+    const confirmMessage = user.is_guest 
+      ? `Are you sure you want to delete guest user "${user.guest_name || user.username}"? This will permanently remove all their scores and data.`
+      : `Are you sure you want to delete user "${user.username}"? This will permanently remove all their scores and data.`;
+
+    if (window.confirm(confirmMessage)) {
+      deleteUserMutation.mutate(user.id);
+    }
   };
 
   if (usersLoading) {
@@ -68,7 +97,7 @@ function UserManagement() {
                     {user.is_active ? 'Active' : 'Inactive'}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
                   <button
                     onClick={() => handleStatusToggle(user.id, user.is_active)}
                     disabled={updateUserStatusMutation.isLoading}
@@ -76,6 +105,15 @@ function UserManagement() {
                   >
                     {user.is_active ? 'Deactivate' : 'Activate'}
                   </button>
+                  {user.id !== currentUser?.id && (
+                    <button
+                      onClick={() => handleDeleteUser(user)}
+                      disabled={deleteUserMutation.isLoading}
+                      className="text-red-600 hover:text-red-900 disabled:text-gray-400 ml-2"
+                    >
+                      Delete
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -127,18 +165,19 @@ function Overview() {
 }
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState('overview');
+  const { user } = useApi();
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState({});
 
   const tabs = [
-    { id: 'overview', name: 'Overview', component: <Overview /> },
-    { id: 'users', name: 'User Management', component: <UserManagement /> },
-    { id: 'images', name: 'Image Management', component: <>
-        <ImageUpload />
-        <ImageList />
-      </> },
-    { id: 'assign', name: 'Bulk Assignment', component: <BulkAssignment /> },
-    { id: 'analytics', name: 'Analytics', component: <Analytics /> },
-    { id: 'export', name: 'Data Export', component: <ExportPanel /> },
+    { key: 'dashboard', label: 'Dashboard', icon: '' },
+    { key: 'images', label: 'Images', icon: '' },
+    { key: 'users', label: 'Users', icon: '' },
+    { key: 'analytics', label: 'Analytics', icon: '' },
+    { key: 'bulk-assignment', label: 'Bulk Assignment', icon: '' },
+    { key: 'guest-access', label: 'Guest Access', icon: '' },
+    { key: 'export', label: 'Data Export', icon: '' }
   ];
 
   return (
@@ -154,24 +193,30 @@ export default function AdminDashboard() {
         <nav className="-mb-px flex space-x-8" aria-label="Tabs">
           {tabs.map((tab) => (
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
               className={`
-                ${activeTab === tab.id
+                ${activeTab === tab.key
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }
                 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
               `}
             >
-              {tab.name}
+              {tab.label}
             </button>
           ))}
         </nav>
       </div>
 
       <div className="mt-8 space-y-8">
-        {tabs.find(tab => tab.id === activeTab)?.component}
+        {activeTab === 'dashboard' && <Overview />}
+        {activeTab === 'images' && <Image />}
+        {activeTab === 'users' && <UserManagement />}
+        {activeTab === 'analytics' && <Analytics />}
+        {activeTab === 'bulk-assignment' && <BulkAssignment />}
+        {activeTab === 'guest-access' && <GuestAccessManager />}
+        {activeTab === 'export' && <ExportPanel />}
       </div>
     </div>
   );

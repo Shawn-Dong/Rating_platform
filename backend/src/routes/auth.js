@@ -11,7 +11,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   passport.use(new GoogleStrategy({
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: "http://localhost:3001/api/auth/google/callback"
+      callbackURL: `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/auth/google/callback`
     },
     function(accessToken, refreshToken, profile, cb) {
       const db = database.getDb();
@@ -70,7 +70,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 
 // Register new user
 router.post('/register', (req, res) => {
-  const { username, email, password, role = 'scorer' } = req.body;
+  const { username, email, password, role = 'admin' } = req.body;
 
   // Validation
   if (!username || !email || !password) {
@@ -247,6 +247,396 @@ router.post('/change-password', authenticateToken, (req, res) => {
         });
       });
     });
+  });
+});
+
+// Generate guest access code (admin only)
+router.post('/generate-guest-code', authenticateToken, (req, res) => {
+  // Check if user is admin
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+
+  const { 
+    name, 
+    description, 
+    expires_in_hours = 24, 
+    max_uses = 100,
+    image_ids = null,
+    folder_id = null,
+    scores_per_image = 3,
+    expected_participants = 5,
+    assignment_algorithm = null
+  } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ error: 'Access code name is required' });
+  }
+
+  // Generate random access code
+  const accessCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+  const expiresAt = new Date(Date.now() + expires_in_hours * 60 * 60 * 1000);
+
+  const query = `
+    INSERT INTO guest_access_codes (
+      code, name, description, expires_at, max_uses, image_ids, 
+      folder_id, scores_per_image, expected_participants, assignment_algorithm, created_by
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `;
+
+  database.getDb().run(query, [
+    accessCode, 
+    name, 
+    description, 
+    expiresAt.toISOString(), 
+    max_uses,
+    image_ids ? JSON.stringify(image_ids) : null,
+    folder_id,
+    scores_per_image,
+    expected_participants,
+    assignment_algorithm ? JSON.stringify(assignment_algorithm) : null,
+    req.user.id
+  ], function(err) {
+    if (err) {
+      console.error('Guest code creation error:', err.message);
+      return res.status(500).json({ error: 'Failed to create guest access code' });
+    }
+
+    res.json({
+      message: 'Guest access code created successfully',
+      access_code: accessCode,
+      id: this.lastID,
+      expires_at: expiresAt,
+      guest_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/guest/${accessCode}`
+    });
+  });
+});
+
+// Guest login with access code
+router.post('/guest-login', (req, res) => {
+  const { access_code, guest_name, guest_email } = req.body;
+
+  if (!access_code || !guest_name || !guest_email) {
+    return res.status(400).json({ error: 'Access code, guest name, and email are required' });
+  }
+
+  // Verify access code
+  const codeQuery = `
+    SELECT * FROM guest_access_codes 
+    WHERE code = ? AND is_active = 1 AND expires_at > datetime('now')
+  `;
+
+  database.getDb().get(codeQuery, [access_code], (err, guestCode) => {
+    if (err) {
+      console.error('Database error:', err.message);
+      return res.status(500).json({ error: 'Database error' });
+    }
+
+    if (!guestCode) {
+      return res.status(401).json({ error: 'Invalid or expired access code' });
+    }
+
+    // Check usage limit
+    if (guestCode.uses_count >= guestCode.max_uses) {
+      return res.status(403).json({ error: 'Access code usage limit exceeded' });
+    }
+
+    // Check if guest user already exists with same name, email, and access code
+    const findGuestQuery = `
+      SELECT * FROM users 
+      WHERE guest_name = ? AND email = ? AND guest_access_code_id = ? AND is_guest = 1
+    `;
+
+    database.getDb().get(findGuestQuery, [guest_name, guest_email, guestCode.id], (err, existingUser) => {
+      if (err) {
+        console.error('Database error:', err.message);
+        return res.status(500).json({ error: 'Database error' });
+      }
+
+      if (existingUser) {
+        // Use existing guest user - don't increment usage count
+        const guestUser = {
+          id: existingUser.id,
+          username: existingUser.username,
+          email: existingUser.email,
+          role: existingUser.role,
+          guest_name: existingUser.guest_name,
+          guest_access_code_id: existingUser.guest_access_code_id
+        };
+
+        const token = generateToken(guestUser);
+
+        res.json({
+          message: 'Guest login successful',
+          user: {
+            id: guestUser.id,
+            username: guestUser.username,
+            email: guestUser.email,
+            role: guestUser.role,
+            guest_name: guestUser.guest_name
+          },
+          token,
+          access_code_info: {
+            name: guestCode.name,
+            description: guestCode.description
+          }
+        });
+      } else {
+        // Create new guest user
+        const guestUsername = `guest_${access_code}_${Date.now()}`;
+        const insertGuestQuery = `
+          INSERT INTO users (username, email, password_hash, role, is_guest, guest_access_code_id, guest_name)
+          VALUES (?, ?, ?, 'guest', 1, ?, ?)
+        `;
+
+        database.getDb().run(insertGuestQuery, [
+          guestUsername, 
+          guest_email,
+          'guest_no_password', // Placeholder for guest users
+          guestCode.id, 
+          guest_name
+        ], function(err) {
+          if (err) {
+            console.error('Guest user creation error:', err.message);
+            return res.status(500).json({ error: 'Failed to create guest user' });
+          }
+
+          const guestUser = {
+            id: this.lastID,
+            username: guestUsername,
+            email: guest_email,
+            role: 'guest',
+            guest_name: guest_name,
+            guest_access_code_id: guestCode.id
+          };
+
+          // Increment usage count for new users only
+          const updateUsageQuery = 'UPDATE guest_access_codes SET uses_count = uses_count + 1 WHERE id = ?';
+          database.getDb().run(updateUsageQuery, [guestCode.id], (err) => {
+            if (err) {
+              console.error('Usage count update error:', err.message);
+            }
+          });
+
+          // Auto-assign images using smart assignment algorithm
+          if (guestCode.assignment_algorithm && guestCode.image_ids) {
+            try {
+              const assignmentPlan = JSON.parse(guestCode.assignment_algorithm);
+              
+              // Get current user count for this access code (including the new user)
+              const getCurrentUsersQuery = `
+                SELECT COUNT(*) as user_count 
+                FROM users 
+                WHERE guest_access_code_id = ? AND is_guest = 1
+              `;
+              
+              database.getDb().get(getCurrentUsersQuery, [guestCode.id], (err, result) => {
+                if (err) {
+                  console.error('Error getting current user count:', err.message);
+                  return;
+                }
+
+                const currentUserIndex = result.user_count - 1; // Zero-based index
+                
+                                if (assignmentPlan.assignments && assignmentPlan.assignments[currentUserIndex]) {
+                  const assignmentData = assignmentPlan.assignments[currentUserIndex];
+                  const userImageIds = assignmentData.imageIds || assignmentData;
+                  
+                  // Ensure userImageIds is an array
+                  if (!Array.isArray(userImageIds)) {
+                    console.error('userImageIds is not an array:', userImageIds);
+                    return;
+                  }
+                  
+                  // Insert assignments for this user
+                   const assignQuery = 'INSERT INTO assignments (user_id, image_id, assigned_at, status) VALUES (?, ?, datetime("now"), "pending")';
+                   
+                   userImageIds.forEach(imageId => {
+                     database.getDb().run(assignQuery, [guestUser.id, imageId], (err) => {
+                       if (err) {
+                         console.error('Smart assignment error:', err.message);
+                       }
+                     });
+                   });
+                  
+                  console.log(`Auto-assigned ${userImageIds.length} images to guest user ${guestUser.guest_name} using smart algorithm`);
+                } else {
+                  console.log(`No assignment found for user index ${currentUserIndex} in smart algorithm`);
+                }
+              });
+            } catch (e) {
+              console.error('Smart assignment parsing error:', e.message);
+              // Fallback to simple assignment
+              this.fallbackImageAssignment(guestUser, guestCode);
+            }
+          } else if (guestCode.image_ids) {
+            // Fallback: assign specific images
+            try {
+              const imageIds = JSON.parse(guestCode.image_ids);
+                             const assignQuery = 'INSERT INTO assignments (user_id, image_id, assigned_at, status) VALUES (?, ?, datetime("now"), "pending")';
+               
+               imageIds.forEach(imageId => {
+                 database.getDb().run(assignQuery, [guestUser.id, imageId], (err) => {
+                   if (err) {
+                     console.error('Simple assignment error:', err.message);
+                   }
+                 });
+               });
+            } catch (e) {
+              console.error('Image assignment parsing error:', e.message);
+            }
+          } else {
+            // Auto-assign all active images if no specific images are set
+            const getAllImagesQuery = 'SELECT id FROM images WHERE is_active = 1';
+            database.getDb().all(getAllImagesQuery, [], (err, images) => {
+              if (!err && images.length > 0) {
+                                 const assignQuery = 'INSERT INTO assignments (user_id, image_id, assigned_at, status) VALUES (?, ?, datetime("now"), "pending")';
+                 images.forEach(image => {
+                   database.getDb().run(assignQuery, [guestUser.id, image.id], (err) => {
+                     if (err) {
+                       console.error('Auto-assignment error:', err.message);
+                     }
+                   });
+                 });
+              }
+            });
+          }
+
+          const token = generateToken(guestUser);
+
+          res.json({
+            message: 'Guest login successful',
+            user: {
+              id: guestUser.id,
+              username: guestUser.username,
+              email: guestUser.email,
+              role: guestUser.role,
+              guest_name: guestUser.guest_name
+            },
+            token,
+            access_code_info: {
+              name: guestCode.name,
+              description: guestCode.description
+            }
+          });
+        });
+      }
+    });
+  });
+});
+
+// Get guest access codes (admin only)
+router.get('/guest-codes', authenticateToken, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+
+  const codesQuery = `
+    SELECT 
+      gac.*,
+      f.name as folder_name,
+      u.username as created_by_username,
+      COUNT(gu.id) as guest_users_count
+    FROM guest_access_codes gac
+    LEFT JOIN users u ON gac.created_by = u.id
+    LEFT JOIN users gu ON gac.id = gu.guest_access_code_id AND gu.is_guest = 1
+    LEFT JOIN folders f ON gac.folder_id = f.id
+    WHERE gac.is_active = 1
+    GROUP BY gac.id
+    ORDER BY gac.created_at DESC
+  `;
+
+    database.getDb().all(codesQuery, [], (err, codes) => {
+    if (err) {
+      console.error('Database error:', err.message);
+      return res.status(500).json({ error: 'Database error' });
+    }
+
+    console.log('Raw codes from database:', codes.length);
+    console.log('First code:', codes[0]);
+
+    // Format codes with proper image names
+    Promise.all(codes.map(code => {
+      return new Promise((resolve) => {
+        const imageIds = code.image_ids ? JSON.parse(code.image_ids) : [];
+        
+        if (imageIds.length === 0) {
+          resolve({
+            ...code,
+            image_ids: imageIds,
+            assignment_algorithm: code.assignment_algorithm,
+            image_names_map: {},
+            guest_users: [],
+            guest_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/guest/${code.code}`
+          });
+          return;
+        }
+
+        // Fetch real image names from database
+        const placeholders = imageIds.map(() => '?').join(',');
+        const imageNamesQuery = `
+          SELECT id, filename, original_name 
+          FROM images 
+          WHERE id IN (${placeholders})
+        `;
+        
+        database.getDb().all(imageNamesQuery, imageIds, (err, images) => {
+          const imageNamesMap = {};
+          
+          if (!err && images) {
+            images.forEach(image => {
+              // Use original_name if available, otherwise use filename
+              imageNamesMap[image.id] = image.original_name || image.filename;
+            });
+          }
+          
+          // Fill in any missing images with fallback names
+          imageIds.forEach(id => {
+            if (!imageNamesMap[id]) {
+              imageNamesMap[id] = `Image ${id}`;
+            }
+          });
+
+          resolve({
+            ...code,
+            image_ids: imageIds,
+            assignment_algorithm: code.assignment_algorithm,
+            image_names_map: imageNamesMap,
+            guest_users: [],
+            guest_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/guest/${code.code}`
+          });
+        });
+      });
+    })).then(formattedCodes => {
+      res.json({ guest_codes: formattedCodes });
+    }).catch(error => {
+      console.error('Error formatting codes:', error);
+      res.status(500).json({ error: 'Failed to format guest codes' });
+    });
+  });
+});
+
+// Deactivate guest access code (admin only)
+router.patch('/guest-codes/:codeId/deactivate', authenticateToken, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+
+  const { codeId } = req.params;
+
+  const query = 'UPDATE guest_access_codes SET is_active = 0 WHERE id = ?';
+  database.getDb().run(query, [codeId], function(err) {
+    if (err) {
+      console.error('Database error:', err.message);
+      return res.status(500).json({ error: 'Database error' });
+    }
+
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'Guest access code not found' });
+    }
+
+    res.json({ message: 'Guest access code deactivated successfully' });
   });
 });
 

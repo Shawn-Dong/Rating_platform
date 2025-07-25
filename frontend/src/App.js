@@ -12,6 +12,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import ProfilePage from './pages/ProfilePage';
 import AuthCallbackPage from './pages/AuthCallbackPage';
 import ImageDetailPage from './pages/ImageDetailPage';
+import GuestLoginPage from './pages/GuestLoginPage';
 
 // Components
 import Layout from './components/Layout';
@@ -34,7 +35,17 @@ function AppRoutes() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center relative">
+        {/* University of Michigan Logo - Top Left */}
+        <div className="absolute top-4 left-4 flex items-center space-x-3">
+          <img 
+            src="/umich_icon.jpg" 
+            alt="University of Michigan" 
+            className="h-10 w-10 object-contain"
+          />
+          <span className="text-lg font-bold text-gray-900">University of Michigan</span>
+        </div>
+        
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
     );
@@ -53,10 +64,15 @@ function AppRoutes() {
         path="/login" 
         element={user ? <Navigate to={getDefaultRoute()} replace /> : <LoginPage />} 
       />
+      <Route path="/guest/:accessCode?" element={<GuestLoginPage />} />
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
       
       {/* Protected Routes */}
-      <Route path="/" element={<Layout />}>
+      <Route path="/" element={
+        <ProtectedRoute allowGuest>
+          <Layout />
+        </ProtectedRoute>
+      }>
         <Route 
           index 
           element={<Navigate to={getDefaultRoute()} replace />} 
@@ -65,7 +81,7 @@ function AppRoutes() {
         <Route 
           path="/dashboard" 
           element={
-            <ProtectedRoute requireScorer>
+            <ProtectedRoute requireScorer allowGuest>
               <DashboardPage />
             </ProtectedRoute>
           } 
@@ -74,7 +90,7 @@ function AppRoutes() {
         <Route 
           path="/score" 
           element={
-            <ProtectedRoute requireScorer>
+            <ProtectedRoute requireScorer allowGuest>
               <ScoringPage />
             </ProtectedRoute>
           } 
@@ -83,7 +99,7 @@ function AppRoutes() {
         <Route 
           path="/profile" 
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowGuest>
               <ProfilePage />
             </ProtectedRoute>
           } 
@@ -91,7 +107,7 @@ function AppRoutes() {
         <Route 
           path="/images/:imageId" 
           element={
-            <ProtectedRoute>
+            <ProtectedRoute requireScorer allowGuest>
               <ImageDetailPage />
             </ProtectedRoute>
           } 

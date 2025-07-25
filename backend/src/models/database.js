@@ -23,7 +23,7 @@ class Database {
         username TEXT UNIQUE NOT NULL,
         email TEXT UNIQUE NOT NULL,
         password_hash TEXT,
-      role TEXT NOT NULL DEFAULT 'scorer',
+      role TEXT NOT NULL DEFAULT 'admin',
       is_active BOOLEAN NOT NULL DEFAULT 1,
       google_id TEXT UNIQUE,
       avatar_url TEXT
@@ -46,7 +46,7 @@ class Database {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
         image_id INTEGER NOT NULL,
-        kss_score INTEGER NOT NULL CHECK (kss_score >= 1 AND kss_score <= 9),
+        kss_score INTEGER NOT NULL CHECK (kss_score >= 0 AND kss_score <= 10),
         explanation TEXT NOT NULL,
         additional_notes TEXT,
         scored_at DATETIME DEFAULT CURRENT_TIMESTAMP,

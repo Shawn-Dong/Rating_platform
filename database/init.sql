@@ -4,32 +4,50 @@
 -- Create database if not exists (handled by Docker environment)
 -- CREATE DATABASE kss_rating;
 
--- Users table for scorers and admins
+-- Users table
 CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    username VARCHAR(255) UNIQUE NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255),
-    role VARCHAR(50) NOT NULL DEFAULT 'scorer',
-    is_active BOOLEAN NOT NULL DEFAULT true,
-    google_id VARCHAR(255) UNIQUE,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    email TEXT UNIQUE,
+    password_hash TEXT,
+    google_id TEXT UNIQUE,
     avatar_url TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    role TEXT DEFAULT 'scorer' CHECK(role IN ('admin', 'scorer', 'guest')),
+    is_active BOOLEAN DEFAULT 1,
+    is_guest BOOLEAN DEFAULT 0,
+    guest_name TEXT,
+    guest_access_code_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (guest_access_code_id) REFERENCES guest_access_codes(id)
 );
 
--- Images table for pictures to be scored
+-- Guest access codes table
+CREATE TABLE IF NOT EXISTS guest_access_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    expires_at DATETIME NOT NULL,
+    max_uses INTEGER DEFAULT 100,
+    uses_count INTEGER DEFAULT 0,
+    image_ids TEXT, -- JSON array of image IDs, null means all images
+    is_active BOOLEAN DEFAULT 1,
+    created_by INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+-- Images table
 CREATE TABLE IF NOT EXISTS images (
-    id SERIAL PRIMARY KEY,
-    filename VARCHAR(255) NOT NULL,
-    s3_url TEXT NOT NULL,
-    original_name VARCHAR(255),
-    dataset_name VARCHAR(255),
-    upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    is_active BOOLEAN DEFAULT true,
-    metadata JSONB,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT UNIQUE NOT NULL,
+    original_name TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    uploaded_by INTEGER NOT NULL,
+    is_active BOOLEAN DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (uploaded_by) REFERENCES users(id)
 );
 
 -- Scores table for KSS ratings
@@ -37,7 +55,7 @@ CREATE TABLE IF NOT EXISTS scores (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
-    kss_score INTEGER NOT NULL CHECK (kss_score >= 1 AND kss_score <= 9),
+    kss_score INTEGER NOT NULL CHECK (kss_score >= 0 AND kss_score <= 10),
     explanation TEXT NOT NULL,
     additional_notes TEXT,
     scored_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

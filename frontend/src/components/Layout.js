@@ -17,7 +17,13 @@ export default function Layout() {
       <nav className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
-            <div className="flex items-center">
+            <div className="flex items-center space-x-3">
+              {/* University of Michigan Logo */}
+              <img 
+                src="/umich_icon.jpg" 
+                alt="University of Michigan" 
+                className="h-10 w-10 object-contain"
+              />
               <Link 
                 to={isAdmin ? "/admin" : "/dashboard"} 
                 className="text-xl font-bold text-gray-900"
@@ -66,7 +72,7 @@ export default function Layout() {
               )}
               <div className="flex items-center space-x-3">
                 <span className="text-sm text-gray-600">
-                  Hello, {user?.username}
+                  Hello, {user?.guest_name || user?.username}
                 </span>
                 <button
                   onClick={handleLogout}

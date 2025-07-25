@@ -17,10 +17,13 @@ export default function DashboardPage() {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">
-          Welcome back, {user?.username}!
+          Welcome back, {user?.guest_name || user?.username}!
         </h1>
         <p className="mt-2 text-gray-600">
-          Track your progress and continue scoring images.
+          {user?.role === 'guest' 
+            ? `Hi ${user.guest_name}, you can start scoring images below.`
+            : 'Track your progress and continue scoring images.'
+          }
         </p>
       </div>
 
@@ -110,7 +113,7 @@ export default function DashboardPage() {
             
             {progress?.remaining === 0 && progress?.completed > 0 && (
               <div className="text-center p-4 bg-green-50 border border-green-200 rounded-md">
-                <div className="text-green-600 text-2xl mb-2">🎉</div>
+                <div className="text-green-600 text-2xl mb-2">✓</div>
                 <h3 className="text-lg font-medium text-green-800">All Done!</h3>
                 <p className="text-green-600">
                   You've completed all your assigned images. Great work!
@@ -133,7 +136,7 @@ export default function DashboardPage() {
                 <div key={score.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                   <div>
                     <p className="text-sm font-medium text-gray-900">
-                      {score.filename || score.original_name}
+                      {user?.role === 'guest' ? 'Image' : (score.filename || score.original_name)}
                     </p>
                     <p className="text-xs text-gray-600">
                       {new Date(score.scored_at).toLocaleDateString()}

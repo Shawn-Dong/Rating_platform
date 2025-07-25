@@ -68,7 +68,7 @@ export function AuthProvider({ children }) {
       
       setUser(user);
       
-      toast.success(`Welcome back, ${user.username}!`);
+              toast.success(`Welcome back, ${user.guest_name || user.username}!`);
       return { success: true, user };
     } catch (error) {
       const message = error.response?.data?.error || 'Login failed';
@@ -121,6 +121,31 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const guestLogin = async (accessCode, guestName, guestEmail = '') => {
+    try {
+      const response = await axios.post('/auth/guest-login', {
+        access_code: accessCode,
+        guest_name: guestName,
+        guest_email: guestEmail || null,
+      });
+
+      const { user, token, access_code_info } = response.data;
+      
+      // Store token
+      localStorage.setItem('token', token);
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      
+      setUser(user);
+      
+      toast.success(`Welcome, ${user.guest_name}! You're now ready to start scoring.`);
+      return { success: true, user, access_code_info };
+    } catch (error) {
+      const message = error.response?.data?.error || 'Guest login failed';
+      toast.error(message);
+      return { success: false, error: message };
+    }
+  };
+
   const value = {
     user,
     loading,
@@ -128,9 +153,10 @@ export function AuthProvider({ children }) {
     register,
     logout,
     changePassword,
+    guestLogin,
     checkAuthStatus, // Expose checkAuthStatus
     isAdmin: user?.role === 'admin',
-    isScorer: user?.role === 'scorer',
+    isGuest: user?.role === 'guest',
   };
 
   return (
@@ -151,6 +177,13 @@ export function useAuth() {
 // Hook for making authenticated API calls
 export function useApi() {
   const api = {
+    // Folder endpoints
+    getFolders: () => axios.get('/folders'),
+    createFolder: (name, description) => axios.post('/folders', { name, description }),
+    getFolder: (folderId) => axios.get(`/folders/${folderId}`),
+    updateFolder: (folderId, name, description) => axios.put(`/folders/${folderId}`, { name, description }),
+    deleteFolder: (folderId) => axios.delete(`/folders/${folderId}`),
+    
     // Image-related endpoints
     getNextImage: () => axios.get('/images/next'),
     getProgress: () => axios.get('/images/progress'),
@@ -167,8 +200,12 @@ export function useApi() {
     createUser: (userData) => axios.post('/admin/users', userData),
     updateUserStatus: (userId, isActive) => 
       axios.patch(`/admin/users/${userId}/status`, { is_active: isActive }),
+    deleteUser: (userId) => axios.delete(`/admin/users/${userId}`),
     getAnalytics: () => axios.get('/admin/analytics/scores'),
     getReliability: () => axios.get('/admin/analytics/reliability'),
+    getFolderAnalytics: () => axios.get('/admin/analytics/folders'),
+    getFolderAnalyticsDetail: (folderId) => axios.get(`/admin/analytics/folders/${folderId}`),
+    getImageScores: (imageId) => axios.get(`/admin/images/${imageId}/scores`),
     exportScores: () => axios.get('/admin/export/scores'),
     bulkAssign: (assignmentData) => axios.post('/admin/bulk-assign', assignmentData),
     uploadImage: (formData) => axios.post('/admin/images/upload', formData, {
@@ -189,6 +226,11 @@ export function useApi() {
         sampleFormat, 
         includeExplanations 
       }, { responseType: 'blob' }),
+    
+    // Guest access endpoints (admin only)
+    generateGuestCode: (guestCodeData) => axios.post('/auth/generate-guest-code', guestCodeData),
+    getGuestCodes: () => axios.get('/auth/guest-codes'),
+    deactivateGuestCode: (codeId) => axios.patch(`/auth/guest-codes/${codeId}/deactivate`),
   };
 
   return api;

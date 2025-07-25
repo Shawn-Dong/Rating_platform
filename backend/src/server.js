@@ -62,48 +62,21 @@ const uploadLimiter = createRateLimit(
   'Too many upload attempts, please try again later'
 );
 
-// CORS configuration
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-      'http://3.131.82.28:9000', // Specific domain for user's deployment
-      process.env.CORS_ORIGIN,
-      // Allow any origin that starts with these patterns for development
-      /^http:\/\/localhost:\d+$/,
-      /^http:\/\/127\.0\.0\.1:\d+$/,
-      /^http:\/\/\d+\.\d+\.\d+\.\d+:\d+$/
-    ].filter(Boolean);
-    
-    const isAllowed = allowedOrigins.some(allowedOrigin => {
-      if (typeof allowedOrigin === 'string') {
-        return origin === allowedOrigin;
-      }
-      if (allowedOrigin instanceof RegExp) {
-        return allowedOrigin.test(origin);
-      }
-      return false;
-    });
-    
-    if (isAllowed) {
-      callback(null, true);
-    } else {
-      console.log('CORS blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  optionsSuccessStatus: 200
-};
+// CORS Configuration
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  credentials: true
+}));
 
-// Middleware
-app.use(cors(corsOptions));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Body parsing middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Serve static images (enabled for local development)
+if (process.env.USE_LOCAL_STORAGE === 'true') {
+  app.use('/images', express.static(path.join(__dirname, '../public/images')));
+  console.log('Local image serving enabled at /images');
+}
 
 // Initialize Passport
 app.use(passport.initialize());
@@ -131,9 +104,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/images', imageRoutes);
 app.use('/api/scores', scoreRoutes);
 app.use('/api/admin', adminRoutes);
-
-// Serve static images (commented out for S3 migration)
-// app.use('/images', express.static(path.join(__dirname, '../public/images')));
+app.use('/api/folders', require('./routes/folders'));
 
 // 404 handler
 app.use('/api/*', (req, res) => {

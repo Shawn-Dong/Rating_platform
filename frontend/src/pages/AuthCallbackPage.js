@@ -24,9 +24,21 @@ export default function AuthCallbackPage() {
   }, [location, navigate, checkAuthStatus]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      <p className="ml-4 text-gray-600">Authenticating...</p>
+    <div className="min-h-screen flex items-center justify-center relative">
+      {/* University of Michigan Logo - Top Left */}
+      <div className="absolute top-4 left-4 flex items-center space-x-3">
+        <img 
+          src="/umich_icon.jpg" 
+          alt="University of Michigan" 
+          className="h-10 w-10 object-contain"
+        />
+        <span className="text-lg font-bold text-gray-900">University of Michigan</span>
+      </div>
+      
+      <div className="flex items-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <p className="ml-4 text-gray-600">Authenticating...</p>
+      </div>
     </div>
   );
 }

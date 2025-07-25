@@ -4,27 +4,35 @@ const database = require('../models/database');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const AWS = require('aws-sdk');
 const { v4: uuidv4 } = require('uuid');
 const ExcelJS = require('exceljs');
 const OpenAI = require('openai');
 
-// Configure AWS S3
-const s3 = new AWS.S3({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  region: process.env.AWS_REGION || 'us-east-1'
-});
+// Configure AWS S3 (only if not using local storage)
+const useLocalStorage = process.env.USE_LOCAL_STORAGE === 'true';
+let s3;
+if (!useLocalStorage) {
+  s3 = new AWS.S3({
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    region: process.env.AWS_REGION
+  });
+}
 
-// Configure Multer for memory storage (not disk)
-const storage = multer.memoryStorage();
-const upload = multer({ 
-  storage: storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
-  },
+// Create uploads directory for local storage
+const uploadsDir = path.join(__dirname, '../../public/images');
+if (useLocalStorage && !fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Configure Multer for file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -50,47 +58,78 @@ const uploadToS3 = (fileBuffer, fileName, mimeType) => {
   return s3.upload(params).promise();
 };
 
+// Helper function to save file locally
+const saveFileLocally = (fileBuffer, fileName) => {
+  const filePath = path.join(uploadsDir, fileName);
+  fs.writeFileSync(filePath, fileBuffer);
+  return `/images/${fileName}`;
+};
+
 // Image Upload Route (Single)
 router.post('/images/upload', upload.single('image'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
   }
 
+  const { folder_id } = req.body;
+
   try {
+    // Validate folder if provided
+    if (folder_id) {
+      const folderExists = await new Promise((resolve, reject) => {
+        database.getDb().get('SELECT id FROM folders WHERE id = ? AND is_active = 1', [folder_id], (err, row) => {
+          if (err) reject(err);
+          else resolve(!!row);
+        });
+      });
+
+      if (!folderExists) {
+        return res.status(400).json({ error: 'Invalid folder ID' });
+      }
+    }
+
     // Generate unique filename
     const fileExtension = path.extname(req.file.originalname);
     const uniqueFileName = `${uuidv4()}-${Date.now()}${fileExtension}`;
 
-    // Upload to S3
-    const s3Result = await uploadToS3(
-      req.file.buffer, 
-      uniqueFileName, 
-      req.file.mimetype
-    );
+    let imageUrl;
+    if (useLocalStorage) {
+      // Save locally for development
+      imageUrl = saveFileLocally(req.file.buffer, uniqueFileName);
+    } else {
+      // Upload to S3 for production
+      const s3Result = await uploadToS3(
+        req.file.buffer, 
+        uniqueFileName, 
+        req.file.mimetype
+      );
+      imageUrl = s3Result.Location;
+    }
 
-    // Save to database with S3 URL
-    const query = 'INSERT INTO images (filename, original_name, s3_url) VALUES (?, ?, ?)';
-    database.getDb().run(query, [uniqueFileName, req.file.originalname, s3Result.Location], function(err) {
+    // Save to database with folder_id
+    const query = 'INSERT INTO images (filename, original_name, s3_url, file_path, uploaded_by, folder_id) VALUES (?, ?, ?, ?, ?, ?)';
+    database.getDb().run(query, [uniqueFileName, req.file.originalname, imageUrl, imageUrl, req.user.id || 1, folder_id || null], function(err) {
       if (err) {
         console.error('Error saving image to database:', err.message);
         return res.status(500).json({ error: 'Failed to save image information.' });
       }
       
       res.status(201).json({ 
-        message: 'Image uploaded successfully to S3', 
+        message: useLocalStorage ? 'Image uploaded successfully (local)' : 'Image uploaded successfully to S3', 
         image: { 
           id: this.lastID, 
           filename: uniqueFileName, 
           originalname: req.file.originalname, 
-          url: s3Result.Location 
+          url: imageUrl,
+          folder_id: folder_id || null
         } 
       });
     });
 
   } catch (error) {
-    console.error('S3 upload error:', error);
+    console.error('Upload error:', error);
     res.status(500).json({ 
-      error: 'Failed to upload image to S3',
+      error: useLocalStorage ? 'Failed to upload image locally' : 'Failed to upload image to S3',
       details: error.message 
     });
   }
@@ -100,6 +139,26 @@ router.post('/images/upload', upload.single('image'), async (req, res) => {
 router.post('/images/bulk-upload', upload.array('images', 20), async (req, res) => {
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ error: 'No files uploaded.' });
+  }
+
+  const { folder_id } = req.body;
+
+  // Validate folder if provided
+  if (folder_id) {
+    try {
+      const folderExists = await new Promise((resolve, reject) => {
+        database.getDb().get('SELECT id FROM folders WHERE id = ? AND is_active = 1', [folder_id], (err, row) => {
+          if (err) reject(err);
+          else resolve(!!row);
+        });
+      });
+
+      if (!folderExists) {
+        return res.status(400).json({ error: 'Invalid folder ID' });
+      }
+    } catch (error) {
+      return res.status(500).json({ error: 'Database error while validating folder' });
+    }
   }
 
   const results = {
@@ -115,17 +174,24 @@ router.post('/images/bulk-upload', upload.array('images', 20), async (req, res) 
       const fileExtension = path.extname(file.originalname);
       const uniqueFileName = `${uuidv4()}-${Date.now()}${fileExtension}`;
 
-      // Upload to S3
-      const s3Result = await uploadToS3(
-        file.buffer, 
-        uniqueFileName, 
-        file.mimetype
-      );
+      let imageUrl;
+      if (useLocalStorage) {
+        // Save locally for development
+        imageUrl = saveFileLocally(file.buffer, uniqueFileName);
+      } else {
+        // Upload to S3 for production
+        const s3Result = await uploadToS3(
+          file.buffer, 
+          uniqueFileName, 
+          file.mimetype
+        );
+        imageUrl = s3Result.Location;
+      }
 
-      // Save to database with S3 URL
+      // Save to database with folder_id
       await new Promise((resolve, reject) => {
-        const query = 'INSERT INTO images (filename, original_name, s3_url) VALUES (?, ?, ?)';
-        database.getDb().run(query, [uniqueFileName, file.originalname, s3Result.Location], function(err) {
+        const query = 'INSERT INTO images (filename, original_name, s3_url, file_path, uploaded_by, folder_id) VALUES (?, ?, ?, ?, ?, ?)';
+        database.getDb().run(query, [uniqueFileName, file.originalname, imageUrl, imageUrl, req.user.id || 1, folder_id || null], function(err) {
           if (err) {
             reject(err);
           } else {
@@ -137,7 +203,8 @@ router.post('/images/bulk-upload', upload.array('images', 20), async (req, res) 
       results.successful.push({
         originalname: file.originalname,
         filename: uniqueFileName,
-        url: s3Result.Location
+        url: imageUrl,
+        folder_id: folder_id || null
       });
 
     } catch (error) {
@@ -150,7 +217,7 @@ router.post('/images/bulk-upload', upload.array('images', 20), async (req, res) 
   }
 
   res.json({
-    message: `Bulk upload completed: ${results.successful.length} successful, ${results.failed.length} failed`,
+    message: `Bulk upload completed: ${results.successful.length} successful, ${results.failed.length} failed (${useLocalStorage ? 'local storage' : 'S3'})`,
     results
   });
 });
@@ -318,7 +385,7 @@ router.delete('/images/bulk-delete', async (req, res) => {
 router.get('/dashboard', (req, res) => {
   const queries = {
     users: 'SELECT COUNT(*) as total FROM users WHERE is_active = 1',
-    scorers: "SELECT COUNT(*) as total FROM users WHERE role = 'scorer' AND is_active = 1",
+            guests: "SELECT COUNT(*) as total FROM users WHERE role = 'guest'",
     images: 'SELECT COUNT(*) as total FROM images WHERE is_active = 1',
     scores: 'SELECT COUNT(*) as total FROM scores',
     assignments: 'SELECT COUNT(*) as total FROM assignments',
@@ -354,7 +421,7 @@ router.get('/dashboard', (req, res) => {
 router.get('/users', (req, res) => {
   const query = `
     SELECT 
-      u.id, u.username, u.email, u.role, u.created_at, u.is_active,
+      u.id, u.username, u.email, u.role, u.is_active,
       COUNT(DISTINCT a.id) as assigned_images,
       COUNT(DISTINCT s.id) as completed_scores,
       AVG(s.kss_score) as avg_score,
@@ -363,7 +430,7 @@ router.get('/users', (req, res) => {
     LEFT JOIN assignments a ON u.id = a.user_id
     LEFT JOIN scores s ON u.id = s.user_id
     GROUP BY u.id
-    ORDER BY u.created_at DESC
+    ORDER BY u.id ASC
   `;
 
   database.getDb().all(query, [], (err, users) => {
@@ -378,14 +445,14 @@ router.get('/users', (req, res) => {
 
 // Create new user (admin)
 router.post('/users', (req, res) => {
-  const { username, email, password, role = 'scorer' } = req.body;
+  const { username, email, password, role = 'admin' } = req.body;
 
   if (!username || !email || !password) {
     return res.status(400).json({ error: 'Username, email, and password are required' });
   }
 
-  if (!['scorer', 'admin'].includes(role)) {
-    return res.status(400).json({ error: 'Role must be either "scorer" or "admin"' });
+  if (role !== 'admin') {
+    return res.status(400).json({ error: 'Only admin users can be created through this endpoint' });
   }
 
   const bcrypt = require('bcryptjs');
@@ -459,6 +526,72 @@ router.patch('/users/:userId/status', (req, res) => {
   });
 });
 
+// Delete user (admin only)
+router.delete('/users/:userId', (req, res) => {
+  const { userId } = req.params;
+
+  // Prevent admin from deleting themselves
+  if (parseInt(userId) === req.user.id) {
+    return res.status(400).json({ error: 'Cannot delete your own account' });
+  }
+
+  // Check if user exists and get their info first
+  const getUserQuery = 'SELECT id, username, role, is_guest FROM users WHERE id = ?';
+  database.getDb().get(getUserQuery, [userId], (err, user) => {
+    if (err) {
+      console.error('User lookup error:', err.message);
+      return res.status(500).json({ error: 'Failed to lookup user' });
+    }
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Start transaction to delete user and related data
+    database.getDb().serialize(() => {
+      database.getDb().run('BEGIN TRANSACTION');
+
+      // Delete user's scores
+      database.getDb().run('DELETE FROM scores WHERE user_id = ?', [userId], (err) => {
+        if (err) {
+          console.error('Error deleting user scores:', err.message);
+          database.getDb().run('ROLLBACK');
+          return res.status(500).json({ error: 'Failed to delete user data' });
+        }
+
+        // Delete user's assignments
+        database.getDb().run('DELETE FROM assignments WHERE user_id = ?', [userId], (err) => {
+          if (err) {
+            console.error('Error deleting user assignments:', err.message);
+            database.getDb().run('ROLLBACK');
+            return res.status(500).json({ error: 'Failed to delete user data' });
+          }
+
+          // Finally delete the user
+          database.getDb().run('DELETE FROM users WHERE id = ?', [userId], function(err) {
+            if (err) {
+              console.error('Error deleting user:', err.message);
+              database.getDb().run('ROLLBACK');
+              return res.status(500).json({ error: 'Failed to delete user' });
+            }
+
+            database.getDb().run('COMMIT');
+            res.json({ 
+              message: `User "${user.username}" deleted successfully`,
+              deletedUser: {
+                id: user.id,
+                username: user.username,
+                role: user.role,
+                was_guest: user.is_guest
+              }
+            });
+          });
+        });
+      });
+    });
+  });
+});
+
 // Get scoring analytics
 router.get('/analytics/scores', (req, res) => {
   const queries = {
@@ -472,7 +605,7 @@ router.get('/analytics/scores', (req, res) => {
       SELECT u.username, COUNT(s.id) as total_scores, AVG(s.kss_score) as avg_score
       FROM users u
       LEFT JOIN scores s ON u.id = s.user_id
-      WHERE u.role = 'scorer' AND u.is_active = 1
+      WHERE u.role = 'guest'
       GROUP BY u.id, u.username
       HAVING total_scores > 0
       ORDER BY total_scores DESC
@@ -504,6 +637,234 @@ router.get('/analytics/scores', (req, res) => {
       if (completed === Object.keys(queries).length) {
         res.json({ analytics });
       }
+    });
+  });
+});
+
+// Get analytics data grouped by folders
+router.get('/analytics/folders', (req, res) => {
+  const query = `
+    SELECT 
+      f.id as folder_id,
+      f.name as folder_name,
+      f.description as folder_description,
+      COUNT(DISTINCT i.id) as total_images,
+      COUNT(DISTINCT a.user_id) as assigned_users,
+      COUNT(DISTINCT s.user_id) as scored_users,
+      COUNT(s.id) as total_scores,
+      AVG(s.kss_score) as avg_score,
+      MIN(s.kss_score) as min_score,
+      MAX(s.kss_score) as max_score
+    FROM folders f
+    LEFT JOIN images i ON f.id = i.folder_id AND i.is_active = 1
+    LEFT JOIN assignments a ON i.id = a.image_id
+    LEFT JOIN scores s ON i.id = s.image_id
+    WHERE f.is_active = 1
+    GROUP BY f.id, f.name, f.description
+    ORDER BY f.name ASC
+  `;
+
+  database.getDb().all(query, [], (err, folderStats) => {
+    if (err) {
+      console.error('Error fetching folder analytics:', err.message);
+      return res.status(500).json({ error: 'Failed to fetch folder analytics' });
+    }
+
+    // For each folder, get the detailed image data
+    const foldersWithImages = [];
+    let completedFolders = 0;
+
+    if (folderStats.length === 0) {
+      return res.json({ folders: [] });
+    }
+
+    folderStats.forEach(folder => {
+      const imageQuery = `
+        SELECT 
+          i.id,
+          i.filename,
+          i.original_name,
+          i.s3_url,
+          i.upload_date,
+          COUNT(DISTINCT a.user_id) as assigned_to,
+          COUNT(DISTINCT s.user_id) as scored_by,
+          AVG(s.kss_score) as avg_score,
+          COUNT(s.id) as total_individual_scores
+        FROM images i
+        LEFT JOIN assignments a ON i.id = a.image_id
+        LEFT JOIN scores s ON i.id = s.image_id
+        WHERE i.folder_id = ? AND i.is_active = 1
+        GROUP BY i.id, i.filename, i.original_name, i.s3_url, i.upload_date
+        ORDER BY i.upload_date DESC
+      `;
+
+      database.getDb().all(imageQuery, [folder.folder_id], (err, images) => {
+        completedFolders++;
+        
+        if (!err) {
+          foldersWithImages.push({
+            ...folder,
+            images: images || []
+          });
+        } else {
+          console.error(`Error fetching images for folder ${folder.folder_id}:`, err.message);
+          foldersWithImages.push({
+            ...folder,
+            images: []
+          });
+        }
+
+        if (completedFolders === folderStats.length) {
+          // Sort folders by name
+          foldersWithImages.sort((a, b) => a.folder_name.localeCompare(b.folder_name));
+          res.json({ folders: foldersWithImages });
+        }
+      });
+    });
+  });
+});
+
+// Get detailed analytics for a specific folder
+router.get('/analytics/folders/:folderId', (req, res) => {
+  const { folderId } = req.params;
+
+  const folderQuery = `
+    SELECT 
+      f.id as folder_id,
+      f.name as folder_name,
+      f.description as folder_description,
+      COUNT(DISTINCT i.id) as total_images,
+      COUNT(DISTINCT a.user_id) as assigned_users,
+      COUNT(DISTINCT s.user_id) as scored_users,
+      COUNT(s.id) as total_scores,
+      AVG(s.kss_score) as avg_score,
+      MIN(s.kss_score) as min_score,
+      MAX(s.kss_score) as max_score
+    FROM folders f
+    LEFT JOIN images i ON f.id = i.folder_id AND i.is_active = 1
+    LEFT JOIN assignments a ON i.id = a.image_id
+    LEFT JOIN scores s ON i.id = s.image_id
+    WHERE f.id = ? AND f.is_active = 1
+    GROUP BY f.id, f.name, f.description
+  `;
+
+  database.getDb().get(folderQuery, [folderId], (err, folder) => {
+    if (err) {
+      console.error('Error fetching folder:', err.message);
+      return res.status(500).json({ error: 'Failed to fetch folder' });
+    }
+
+    if (!folder) {
+      return res.status(404).json({ error: 'Folder not found' });
+    }
+
+    // Get detailed image data with individual scores
+    const imageQuery = `
+      SELECT 
+        i.id,
+        i.filename,
+        i.original_name,
+        i.s3_url,
+        i.upload_date,
+        COUNT(DISTINCT a.user_id) as assigned_to,
+        COUNT(DISTINCT s.user_id) as scored_by,
+        AVG(s.kss_score) as avg_score
+      FROM images i
+      LEFT JOIN assignments a ON i.id = a.image_id
+      LEFT JOIN scores s ON i.id = s.image_id
+      WHERE i.folder_id = ? AND i.is_active = 1
+      GROUP BY i.id, i.filename, i.original_name, i.s3_url, i.upload_date
+      ORDER BY i.upload_date DESC
+    `;
+
+    database.getDb().all(imageQuery, [folderId], (err, images) => {
+      if (err) {
+        console.error('Error fetching images:', err.message);
+        return res.status(500).json({ error: 'Failed to fetch images' });
+      }
+
+      res.json({
+        folder: {
+          ...folder,
+          images: images || []
+        }
+      });
+    });
+  });
+});
+
+// Get detailed scores for a specific image (admin only)
+router.get('/images/:imageId/scores', (req, res) => {
+  const { imageId } = req.params;
+
+  // Get image basic info
+  const imageQuery = `
+    SELECT 
+      i.*,
+      u.username as uploaded_by_username,
+      f.name as folder_name
+    FROM images i
+    LEFT JOIN users u ON i.uploaded_by = u.id
+    LEFT JOIN folders f ON i.folder_id = f.id
+    WHERE i.id = ? AND i.is_active = 1
+  `;
+
+  database.getDb().get(imageQuery, [imageId], (err, image) => {
+    if (err) {
+      console.error('Error fetching image:', err.message);
+      return res.status(500).json({ error: 'Failed to fetch image' });
+    }
+
+    if (!image) {
+      return res.status(404).json({ error: 'Image not found' });
+    }
+
+    // Get all scores for this image
+    const scoresQuery = `
+      SELECT 
+        s.*,
+        u.username as scorer_username,
+        u.guest_name,
+        u.role,
+        u.is_guest
+      FROM scores s
+      JOIN users u ON s.user_id = u.id
+      WHERE s.image_id = ?
+      ORDER BY s.scored_at DESC
+    `;
+
+    database.getDb().all(scoresQuery, [imageId], (err, scores) => {
+      if (err) {
+        console.error('Error fetching scores:', err.message);
+        return res.status(500).json({ error: 'Failed to fetch scores' });
+      }
+
+      // Calculate statistics
+      const statistics = scores.length > 0 ? {
+        total_scores: scores.length,
+        avg_score: scores.reduce((sum, score) => sum + score.kss_score, 0) / scores.length,
+        min_score: Math.min(...scores.map(s => s.kss_score)),
+        max_score: Math.max(...scores.map(s => s.kss_score)),
+        score_variance: Math.max(...scores.map(s => s.kss_score)) - Math.min(...scores.map(s => s.kss_score))
+      } : null;
+
+      // Format the individual scores
+      const individual_scores = scores.map(score => ({
+        score_id: score.id,
+        scorer_username: score.is_guest ? score.guest_name : score.username,
+        user_type: score.is_guest ? 'guest' : score.role,
+        kss_score: score.kss_score,
+        explanation: score.explanation,
+        additional_notes: score.additional_notes,
+        time_spent_seconds: score.time_spent_seconds,
+        scored_at: score.scored_at
+      }));
+
+      res.json({
+        image,
+        individual_scores,
+        statistics
+      });
     });
   });
 });
@@ -606,7 +967,7 @@ router.post('/bulk-assign', (req, res) => {
 
   if (assignment_type === 'all_to_all') {
     // Assign all available images to all active scorers
-    const getUsersQuery = "SELECT id FROM users WHERE role = 'scorer' AND is_active = 1";
+    const getUsersQuery = "SELECT id FROM users WHERE role = 'guest'";
     const getImagesQuery = "SELECT id FROM images WHERE is_active = 1";
 
     database.getDb().all(getUsersQuery, [], (err, users) => {
@@ -672,218 +1033,246 @@ function assignmentsBulkInsert(assignments, res) {
   });
 }
 
-// Export as Excel
+// Export Excel
 router.get('/export/excel', (req, res) => {
-  const workbook = new ExcelJS.Workbook();
-  
-  // Get comprehensive scoring data
   const query = `
     SELECT 
+      s.*,
       u.username,
       u.email,
       u.role,
-      i.filename,
-      i.original_name,
-      i.dataset_name,
-      s.kss_score,
-      s.explanation,
-      s.additional_notes,
-      s.time_spent_seconds,
-      s.scored_at,
-      i.upload_date
+      u.guest_name,
+      u.is_guest,
+      u.guest_access_code_id,
+      i.filename as image_filename,
+      i.original_name as image_original_name,
+      gac.name as access_code_name,
+      gac.description as access_code_description
     FROM scores s
     JOIN users u ON s.user_id = u.id
     JOIN images i ON s.image_id = i.id
-    WHERE i.is_active = 1
+    LEFT JOIN guest_access_codes gac ON u.guest_access_code_id = gac.id
+    WHERE u.is_active = 1
     ORDER BY s.scored_at DESC
   `;
 
-  database.getDb().all(query, [], (err, scores) => {
+  database.getDb().all(query, [], async (err, scores) => {
     if (err) {
-      console.error('Error fetching scores for export:', err.message);
-      return res.status(500).json({ error: 'Failed to export data' });
+      console.error('Database error:', err.message);
+      return res.status(500).json({ error: 'Failed to fetch scores for export' });
     }
 
-    // Create worksheet
+    const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('KSS Scores');
-    
-    // Add headers
+
+    // Define columns
     worksheet.columns = [
-      { header: 'Username', key: 'username', width: 15 },
-      { header: 'Email', key: 'email', width: 25 },
-      { header: 'Role', key: 'role', width: 10 },
-      { header: 'Image Filename', key: 'filename', width: 20 },
-      { header: 'Original Name', key: 'original_name', width: 25 },
-      { header: 'Dataset', key: 'dataset_name', width: 15 },
+      { header: 'Score ID', key: 'id', width: 10 },
+      { header: 'User Type', key: 'user_type', width: 12 },
+      { header: 'Username', key: 'username', width: 20 },
+      { header: 'Display Name', key: 'display_name', width: 25 },
+      { header: 'Email', key: 'email', width: 30 },
+      { header: 'Access Code', key: 'access_code', width: 20 },
+      { header: 'Image Filename', key: 'image_filename', width: 30 },
+      { header: 'Original Name', key: 'image_original_name', width: 30 },
       { header: 'KSS Score', key: 'kss_score', width: 12 },
       { header: 'Explanation', key: 'explanation', width: 50 },
-      { header: 'Additional Notes', key: 'additional_notes', width: 30 },
-      { header: 'Time Spent (seconds)', key: 'time_spent_seconds', width: 18 },
-      { header: 'Scored At', key: 'scored_at', width: 20 },
-      { header: 'Image Upload Date', key: 'upload_date', width: 20 }
+      { header: 'Time Spent (sec)', key: 'time_spent_seconds', width: 15 },
+      { header: 'Created At', key: 'created_at', width: 20 },
+      { header: 'Updated At', key: 'updated_at', width: 20 }
     ];
 
-    // Add data
+    // Add data rows
     scores.forEach(score => {
-      worksheet.addRow(score);
+      worksheet.addRow({
+        id: score.id,
+        user_type: score.is_guest ? 'Guest' : score.role,
+        username: score.username,
+        display_name: score.is_guest ? score.guest_name : score.username,
+        email: score.email || 'N/A',
+        access_code: score.access_code_name || 'N/A',
+        image_filename: score.image_filename,
+        image_original_name: score.image_original_name,
+        kss_score: score.kss_score,
+        explanation: score.explanation || '',
+        time_spent_seconds: score.time_spent_seconds || 0,
+        created_at: score.scored_at,
+        updated_at: score.scored_at
+      });
     });
 
-    // Style the header
-    worksheet.getRow(1).font = { bold: true };
-    worksheet.getRow(1).fill = {
+    // Style the header row
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true };
+    headerRow.fill = {
       type: 'pattern',
       pattern: 'solid',
-      fgColor: { argb: 'FFE6E6FA' }
+      fgColor: { argb: 'FFE0E0E0' }
     };
 
-    // Set response headers
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=kss_scores_${new Date().toISOString().split('T')[0]}.xlsx`);
+    // Generate filename with timestamp
+    const timestamp = new Date().toISOString().split('T')[0];
+    const filename = `kss_scores_${timestamp}.xlsx`;
 
-    // Write to response
-    workbook.xlsx.write(res).then(() => {
+    // Set response headers for file download
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    try {
+      await workbook.xlsx.write(res);
       res.end();
-    }).catch(err => {
-      console.error('Error writing Excel file:', err);
+    } catch (error) {
+      console.error('Excel export error:', error);
       res.status(500).json({ error: 'Failed to generate Excel file' });
-    });
+    }
   });
 });
 
-// Export with LLM formatting
+// Export LLM JSON
 router.post('/export/llm-json', async (req, res) => {
   const { apiKey, sampleFormat, includeExplanations = true } = req.body;
 
-  if (!apiKey || !sampleFormat) {
-    return res.status(400).json({ 
-      error: 'API key and sample format are required' 
-    });
+  if (!apiKey) {
+    return res.status(400).json({ error: 'OpenAI API key is required' });
+  }
+
+  if (!sampleFormat) {
+    return res.status(400).json({ error: 'Sample format is required' });
   }
 
   try {
-    // Initialize OpenAI client
-    const openai = new OpenAI({
-      apiKey: apiKey
-    });
+    // Validate the sample format is valid JSON
+    JSON.parse(sampleFormat);
+  } catch (error) {
+    return res.status(400).json({ error: 'Sample format must be valid JSON' });
+  }
 
-    // Get scoring data
-    const query = `
-      SELECT 
-        u.username,
-        i.filename,
-        i.original_name,
-        i.dataset_name,
-        s.kss_score,
-        s.explanation,
-        s.additional_notes,
-        s.time_spent_seconds,
-        s.scored_at
-      FROM scores s
-      JOIN users u ON s.user_id = u.id
-      JOIN images i ON s.image_id = i.id
-      WHERE i.is_active = 1
-      ORDER BY i.id, s.scored_at
-    `;
+  const query = `
+    SELECT 
+      s.*,
+      u.username,
+      u.email,
+      u.role,
+      u.guest_name,
+      u.is_guest,
+      u.guest_access_code_id,
+      i.filename as image_filename,
+      i.original_name as image_original_name,
+      gac.name as access_code_name
+    FROM scores s
+    JOIN users u ON s.user_id = u.id
+    JOIN images i ON s.image_id = i.id
+    LEFT JOIN guest_access_codes gac ON u.guest_access_code_id = gac.id
+    WHERE u.is_active = 1
+    ORDER BY s.scored_at DESC
+  `;
 
-    database.getDb().all(query, [], async (err, scores) => {
-      if (err) {
-        console.error('Error fetching scores for LLM export:', err.message);
-        return res.status(500).json({ error: 'Failed to fetch data' });
-      }
+  database.getDb().all(query, [], async (err, scores) => {
+    if (err) {
+      console.error('Database error:', err.message);
+      return res.status(500).json({ error: 'Failed to fetch scores for export' });
+    }
 
-      // Group scores by image
-      const groupedScores = {};
+    try {
+      // Group scores by image filename
+      const groupedData = {};
       scores.forEach(score => {
-        if (!groupedScores[score.filename]) {
-          groupedScores[score.filename] = {
-            filename: score.filename,
-            original_name: score.original_name,
-            dataset_name: score.dataset_name,
+        const imageKey = score.image_filename;
+        if (!groupedData[imageKey]) {
+          groupedData[imageKey] = {
+            image_filename: score.image_filename,
+            image_original_name: score.image_original_name,
             scores: []
           };
         }
-        groupedScores[score.filename].scores.push({
-          username: score.username,
+
+        const scoreData = {
+          score_id: score.id,
+          user_type: score.is_guest ? 'guest' : score.role,
+          user_identifier: score.is_guest ? score.guest_name : score.username,
+          email: score.email,
+          access_code: score.access_code_name,
           kss_score: score.kss_score,
-          explanation: includeExplanations ? score.explanation : undefined,
-          additional_notes: score.additional_notes,
           time_spent_seconds: score.time_spent_seconds,
-          scored_at: score.scored_at
-        });
-      });
+          created_at: score.scored_at
+        };
 
-      // Create prompt for LLM
-      const dataForLLM = Object.values(groupedScores).slice(0, 5); // First 5 images as sample
-      
-      const prompt = `You are a data analyst tasked with reformatting KSS (Karolinska Sleepiness Scale) scoring data into a specific JSON format.
-
-Here is the raw data from our rating platform:
-${JSON.stringify(dataForLLM, null, 2)}
-
-Please reformat ALL the provided data according to this exact sample format:
-${sampleFormat}
-
-Requirements:
-1. Follow the sample format structure EXACTLY
-2. Include all images and their associated scores
-3. Maintain data integrity - don't modify the actual scores or explanations
-4. If the sample format requires additional calculated fields (like averages, statistics), compute them accurately
-5. Return only the formatted JSON without any explanations
-
-Format ALL the data provided, not just a sample.`;
-
-      try {
-        const completion = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
-            {
-              role: "system",
-              content: "You are a data formatting assistant. Return only valid JSON without any markdown formatting or explanations."
-            },
-            {
-              role: "user", 
-              content: prompt
-            }
-          ],
-          temperature: 0
-        });
-
-        const formattedData = completion.choices[0].message.content;
-        
-        // Try to parse to ensure valid JSON
-        let jsonData;
-        try {
-          jsonData = JSON.parse(formattedData);
-        } catch (parseErr) {
-          console.error('LLM returned invalid JSON:', parseErr);
-          return res.status(500).json({ 
-            error: 'LLM returned invalid JSON format',
-            raw_response: formattedData
-          });
+        if (includeExplanations && score.explanation) {
+          scoreData.explanation = score.explanation;
         }
 
-        // Set response headers for JSON file download
-        res.setHeader('Content-Type', 'application/json');
-        res.setHeader('Content-Disposition', `attachment; filename=kss_scores_formatted_${new Date().toISOString().split('T')[0]}.json`);
-        
-        res.json(jsonData);
+        groupedData[imageKey].scores.push(scoreData);
+      });
 
-      } catch (llmError) {
-        console.error('OpenAI API error:', llmError);
+      // Prepare data for LLM
+      const dataToFormat = Object.values(groupedData);
+
+      // Create OpenAI instance
+      const openai = new OpenAI({
+        apiKey: apiKey,
+      });
+
+      const prompt = `Please reformat the following KSS scoring data according to the provided sample format. The data includes both regular users and guest users (identified by user_type).
+
+Sample format to follow:
+${sampleFormat}
+
+Data to reformat:
+${JSON.stringify(dataToFormat, null, 2)}
+
+Please return only the reformatted JSON data, no additional text or explanations.`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        temperature: 0.1
+      });
+
+      const formattedData = completion.choices[0].message.content;
+
+      // Validate that the response is valid JSON
+      let parsedData;
+      try {
+        parsedData = JSON.parse(formattedData);
+      } catch (parseError) {
+        console.error('LLM response parsing error:', parseError);
         return res.status(500).json({ 
-          error: 'Failed to process data with LLM',
-          details: llmError.message
+          error: 'Failed to parse LLM response as JSON',
+          llm_response: formattedData 
         });
       }
-    });
 
-  } catch (error) {
-    console.error('Export error:', error);
-    res.status(500).json({ 
-      error: 'Failed to process export request',
-      details: error.message
-    });
-  }
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().split('T')[0];
+      const filename = `kss_scores_formatted_${timestamp}.json`;
+
+      // Set response headers for file download
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+      res.json(parsedData);
+
+    } catch (error) {
+      console.error('LLM JSON export error:', error);
+      
+      if (error.code === 'invalid_api_key') {
+        return res.status(401).json({ error: 'Invalid OpenAI API key' });
+      }
+      
+      res.status(500).json({ 
+        error: 'Failed to process data with LLM',
+        details: error.message 
+      });
+    }
+  });
 });
 
 module.exports = router; 

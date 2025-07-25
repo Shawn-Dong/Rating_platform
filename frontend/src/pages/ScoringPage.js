@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
-import { useApi } from '../hooks/useAuth';
+import { useApi, useAuth } from '../hooks/useAuth';
 
 const KSS_SCALE = [
   { value: 1, label: 'Very alert', description: 'Feeling active, vital, alert, or wide awake' },
@@ -18,6 +18,7 @@ const KSS_SCALE = [
 
 export default function ScoringPage() {
   const api = useApi();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [startTime, setStartTime] = useState(null);
   const [selectedScore, setSelectedScore] = useState(null);
@@ -47,6 +48,10 @@ export default function ScoringPage() {
       toast.success('Score submitted successfully!');
       queryClient.invalidateQueries('nextImage');
       queryClient.invalidateQueries('progress');
+      // Invalidate analytics data so it updates when scorers complete images
+      queryClient.invalidateQueries(['folderAnalytics']);
+      queryClient.invalidateQueries(['imageScores']);
+      queryClient.invalidateQueries(['trainingImages']);
       reset();
       setSelectedScore(null);
     },
@@ -92,7 +97,7 @@ export default function ScoringPage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="bg-green-50 border border-green-200 rounded-lg p-8 max-w-md">
-            <div className="text-green-600 text-6xl mb-4">🎉</div>
+                            <div className="text-green-600 text-6xl mb-4">✓</div>
             <h2 className="text-xl font-semibold text-green-800 mb-2">
               All Done!
             </h2>
@@ -120,7 +125,12 @@ export default function ScoringPage() {
         {progress && (
           <div className="mb-6">
             <div className="flex justify-between items-center mb-2">
-              <h1 className="text-2xl font-bold text-gray-900">Image Scoring</h1>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Image Scoring</h1>
+                {user?.role === 'guest' && user?.guest_name && (
+                  <p className="text-sm text-gray-600 mt-1">Welcome, {user.guest_name}</p>
+                )}
+              </div>
               <div className="text-sm text-gray-600">
                 {progress.completed} of {progress.total_assigned} completed ({progress.completion_percentage}%)
               </div>
@@ -141,19 +151,22 @@ export default function ScoringPage() {
             <div className="border rounded-lg overflow-hidden bg-gray-50">
               <img 
                 src={image.s3_url || `/images/${image.filename}`}
-                alt={`Score this image - ${image.original_name || image.filename}`}
+                alt={user?.role === 'guest' ? 'Score this image' : `Score this image - ${image.original_name || image.filename}`}
                 className="w-full h-auto max-h-96 object-contain"
                 onError={(e) => {
                   e.target.src = '/placeholder-image.png'; // Fallback image
                 }}
               />
             </div>
-            <div className="mt-4 text-sm text-gray-600">
-              <p>Filename: {image.original_name || image.filename}</p>
-              {image.metadata && (
-                <p>Metadata: {image.metadata}</p>
-              )}
-            </div>
+            {/* Only show filename and metadata for non-guest users */}
+            {user?.role !== 'guest' && (
+              <div className="mt-4 text-sm text-gray-600">
+                <p>Filename: {image.original_name || image.filename}</p>
+                {image.metadata && (
+                  <p>Metadata: {image.metadata}</p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Scoring Form */}

@@ -60,14 +60,14 @@ export default function ExportPanel() {
     },
     onError: (error) => {
       console.error('Excel export error:', error);
-      toast.error('Failed to export Excel file');
+      toast.error(error.response?.data?.error || 'Failed to export Excel file');
       setIsExporting(false);
     }
   });
 
   // LLM JSON export mutation
   const llmExportMutation = useMutation(
-    () => api.exportLLMJson(apiKey, sampleFormat || defaultSampleFormat, includeExplanations),
+    () => api.exportLLMJson(apiKey, sampleFormat.trim() || defaultSampleFormat, includeExplanations),
     {
       onSuccess: (response) => {
         const blob = new Blob([response.data], { type: 'application/json' });
@@ -107,6 +107,10 @@ export default function ExportPanel() {
 
   const resetSampleFormat = () => {
     setSampleFormat(defaultSampleFormat);
+  };
+
+  const clearSampleFormat = () => {
+    setSampleFormat('');
   };
 
   return (
@@ -160,15 +164,23 @@ export default function ExportPanel() {
                 <label className="block text-sm font-medium text-gray-700">
                   JSON Format Sample
                 </label>
-                <button
-                  onClick={resetSampleFormat}
-                  className="text-xs text-blue-600 hover:text-blue-700"
-                >
-                  Use Default Format
-                </button>
+                <div className="space-x-2">
+                  <button
+                    onClick={resetSampleFormat}
+                    className="text-xs text-blue-600 hover:text-blue-700"
+                  >
+                    Use Default Format
+                  </button>
+                  <button
+                    onClick={clearSampleFormat}
+                    className="text-xs text-gray-600 hover:text-gray-700"
+                  >
+                    Clear
+                  </button>
+                </div>
               </div>
               <textarea
-                value={sampleFormat || defaultSampleFormat}
+                value={sampleFormat}
                 onChange={(e) => setSampleFormat(e.target.value)}
                 rows="12"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 font-mono text-sm"

@@ -187,7 +187,7 @@ export default function ImageUpload() {
           {uploadResults.successful.length > 0 && (
             <div className="mb-3">
               <h5 className="text-sm font-medium text-green-700 mb-1">
-                ✅ Successfully Uploaded ({uploadResults.successful.length})
+                Successfully Uploaded ({uploadResults.successful.length})
               </h5>
               <div className="space-y-1">
                 {uploadResults.successful.map((result, index) => (
@@ -200,7 +200,7 @@ export default function ImageUpload() {
           {uploadResults.failed.length > 0 && (
             <div>
               <h5 className="text-sm font-medium text-red-700 mb-1">
-                ❌ Failed to Upload ({uploadResults.failed.length})
+                Failed to Upload ({uploadResults.failed.length})
               </h5>
               <div className="space-y-1">
                 {uploadResults.failed.map((result, index) => (

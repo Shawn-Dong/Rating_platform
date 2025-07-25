@@ -10,7 +10,9 @@ const generateToken = (user) => {
       id: user.id, 
       username: user.username, 
       email: user.email,
-      role: user.role 
+      role: user.role,
+      guest_name: user.guest_name || null,
+      is_guest: user.is_guest || false
     },
     JWT_SECRET,
     { expiresIn: '7d' }
@@ -36,23 +38,32 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+// Get user by ID (supporting guest users)
+const getUserById = (userId, callback) => {
+  const query = 'SELECT * FROM users WHERE id = ? AND is_active = 1';
+  database.getDb().get(query, [userId], callback);
+};
+
 // Admin only middleware
 const requireAdmin = (req, res, next) => {
   if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
+    return res.status(403).json({ error: 'Admin privileges required' });
   }
   next();
 };
 
-// Get user from database by ID
-const getUserById = (userId, callback) => {
-  const query = 'SELECT id, username, email, role, created_at, is_active FROM users WHERE id = ? AND is_active = 1';
-  database.getDb().get(query, [userId], callback);
+// Scorer or Guest middleware (allows both roles)
+const requireScorerOrGuest = (req, res, next) => {
+  if (req.user.role === 'admin') {
+    return res.status(403).json({ error: 'This endpoint is for guest users only' });
+  }
+  next();
 };
 
 module.exports = {
   generateToken,
   authenticateToken,
+  getUserById,
   requireAdmin,
-  getUserById
+  requireScorerOrGuest
 }; 

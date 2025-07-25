@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
-import { useQuery } from 'react-query';
+import { useQuery, useQueryClient } from 'react-query';
 import { useApi } from '../hooks/useAuth';
 
 function ImageScoreDetails({ imageId, isOpen, onClose }) {
   const api = useApi();
-  const { data: imageData, isLoading } = useQuery(
-    ['imageDetails', imageId], 
-    () => api.getImage(imageId),
+  const { data: imageData, isLoading, error } = useQuery(
+    ['imageScores', imageId], 
+    () => api.getImageScores(imageId),
     { enabled: isOpen }
   );
+
+
 
   if (!isOpen) return null;
 
@@ -18,7 +20,7 @@ function ImageScoreDetails({ imageId, isOpen, onClose }) {
 
   return (
     <tr>
-      <td colSpan="5" className="px-6 py-4 bg-gray-50">
+      <td colSpan="6" className="px-6 py-4 bg-gray-50">
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h4 className="text-lg font-semibold text-gray-900">Individual Ratings</h4>
@@ -32,7 +34,11 @@ function ImageScoreDetails({ imageId, isOpen, onClose }) {
             </button>
           </div>
 
-          {isLoading ? (
+          {error ? (
+            <div className="text-center py-8 text-red-500">
+              <p>Error loading scores: {error.response?.data?.error || error.message}</p>
+            </div>
+          ) : isLoading ? (
             <div className="text-center py-4">
               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
               <p className="mt-2 text-sm text-gray-600">Loading scores...</p>
@@ -122,180 +128,295 @@ function ImageScoreDetails({ imageId, isOpen, onClose }) {
   );
 }
 
-export default function Analytics() {
-  const api = useApi();
-  const [expandedImageId, setExpandedImageId] = useState(null);
-  const [page, setPage] = useState(1);
-
-  const { data: imagesData, isLoading } = useQuery(
-    ['trainingImages', page], 
-    () => api.getImages({ page, limit: 20 })
-  );
-
-  const images = imagesData?.data?.images || [];
-  const pagination = imagesData?.data?.pagination;
+function FolderSection({ folder, expandedImageId, setExpandedImageId }) {
+  const [isExpanded, setIsExpanded] = useState(true);
 
   const toggleImageDetails = (imageId) => {
     setExpandedImageId(expandedImageId === imageId ? null : imageId);
+  };
+
+  const hasImages = folder.images && folder.images.length > 0;
+
+  return (
+    <div className="border border-gray-200 rounded-lg mb-6 overflow-hidden">
+      {/* Folder Header */}
+      <div 
+        className="bg-gray-50 px-6 py-4 cursor-pointer hover:bg-gray-100 transition-colors"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex justify-between items-center">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+              <svg 
+                className={`w-5 h-5 mr-2 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+              {folder.folder_name}
+            </h3>
+            {folder.folder_description && (
+              <p className="text-sm text-gray-600 mt-1">{folder.folder_description}</p>
+            )}
+          </div>
+          <div className="flex space-x-6 text-sm">
+            <div className="text-center">
+              <div className="font-semibold text-blue-600">{folder.total_images || 0}</div>
+              <div className="text-gray-500">Images</div>
+            </div>
+            <div className="text-center">
+              <div className="font-semibold text-green-600">{folder.total_scores || 0}</div>
+              <div className="text-gray-500">Scores</div>
+            </div>
+            <div className="text-center">
+              <div className="font-semibold text-purple-600">
+                {folder.avg_score ? folder.avg_score.toFixed(2) : 'N/A'}
+              </div>
+              <div className="text-gray-500">Avg Score</div>
+            </div>
+            <div className="text-center">
+              <div className="font-semibold text-indigo-600">{folder.scored_users || 0}</div>
+              <div className="text-gray-500">Scorers</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Folder Content */}
+      {isExpanded && (
+        <div>
+          {hasImages ? (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Image
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      File Info
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Assigned To
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Scored By
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Avg Score
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {folder.images.map((image) => (
+                    <React.Fragment key={image.id}>
+                      <tr className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 h-10 w-10">
+                              <img 
+                                className="h-10 w-10 rounded object-cover" 
+                                src={image.s3_url} 
+                                alt={image.filename}
+                                onError={(e) => {
+                                  e.target.src = '/placeholder-image.png';
+                                }}
+                              />
+                            </div>
+                            <div className="ml-4">
+                              <div className="text-sm font-medium text-gray-900">
+                                {image.original_name || image.filename}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {new Date(image.upload_date).toLocaleDateString()}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <div className="space-y-1">
+                            <div className="text-sm font-medium">
+                              {image.original_name || image.filename}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Uploaded: {new Date(image.upload_date).toLocaleDateString()}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            {image.assigned_to || 0} users
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            {image.scored_by || 0} completed
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {image.avg_score ? image.avg_score.toFixed(2) : 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <button
+                            onClick={() => toggleImageDetails(image.id)}
+                            className="text-indigo-600 hover:text-indigo-900 font-medium"
+                          >
+                            {expandedImageId === image.id ? 'Hide Details' : 'View Details'}
+                          </button>
+                        </td>
+                      </tr>
+                      
+                      <ImageScoreDetails 
+                        imageId={image.id}
+                        isOpen={expandedImageId === image.id}
+                        onClose={() => setExpandedImageId(null)}
+                      />
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="px-6 py-8 text-center text-gray-500">
+              <p>No images in this folder yet.</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function Analytics() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  const [expandedImageId, setExpandedImageId] = useState(null);
+
+  const { data: folderData, isLoading, refetch } = useQuery(
+    ['folderAnalytics'], 
+    () => api.getFolderAnalytics(),
+    {
+      refetchOnWindowFocus: true,
+      staleTime: 30000, // 30 seconds
+      cacheTime: 5 * 60 * 1000, // 5 minutes
+    }
+  );
+
+  const folders = folderData?.data?.folders || [];
+
+  const handleRefresh = () => {
+    // Invalidate both folder analytics and image scores caches
+    queryClient.invalidateQueries(['folderAnalytics']);
+    queryClient.invalidateQueries(['imageScores']);
+    refetch();
   };
 
   if (isLoading) {
     return (
       <div className="text-center py-8">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-        <p className="mt-2 text-gray-600">Loading training data...</p>
+        <p className="mt-2 text-gray-600">Loading analytics data...</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border">
-      <div className="px-6 py-4 border-b border-gray-200">
-        <h2 className="text-xl font-semibold text-gray-900">Training Data Viewer</h2>
-        <p className="text-sm text-gray-600 mt-1">
-          Click on any image row to view individual scores and explanations from different raters
-        </p>
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Image
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                File Info
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Assigned To
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Scored By
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Avg Score
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {images.map((image) => (
-              <React.Fragment key={image.id}>
-                <tr 
-                  className="hover:bg-gray-50 cursor-pointer transition-colors"
-                  onClick={() => toggleImageDetails(image.id)}
-                >
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 h-10 w-10">
-                        <img 
-                          className="h-10 w-10 rounded object-cover" 
-                          src={image.s3_url} 
-                          alt={image.filename}
-                          onError={(e) => {
-                            e.target.src = '/placeholder-image.png';
-                          }}
-                        />
-                      </div>
-                      <div className="ml-4">
-                        <div className="text-sm font-medium text-gray-900">
-                          {image.original_name || image.filename}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {new Date(image.upload_date).toLocaleDateString()}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium">
-                        {image.original_name || image.filename}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        Uploaded: {new Date(image.upload_date).toLocaleDateString()}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                      {image.assigned_to || 0} users
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      {image.scored_by || 0} completed
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {image.avg_score ? image.avg_score.toFixed(2) : 'N/A'}
-                  </td>
-                </tr>
-                
-                <ImageScoreDetails 
-                  imageId={image.id}
-                  isOpen={expandedImageId === image.id}
-                  onClose={() => setExpandedImageId(null)}
-                />
-              </React.Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination */}
-      {pagination && pagination.pages > 1 && (
-        <div className="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
-          <div className="flex items-center justify-between">
-            <div className="flex-1 flex justify-between sm:hidden">
-              <button
-                onClick={() => setPage(Math.max(1, page - 1))}
-                disabled={page === 1}
-                className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => setPage(Math.min(pagination.pages, page + 1))}
-                disabled={page === pagination.pages}
-                className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-              >
-                Next
-              </button>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="bg-white rounded-lg shadow-sm border">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">Training Data Analytics</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                Analytics organized by folder. Click on folder headers to expand/collapse, and image rows to view individual scores.
+              </p>
             </div>
-            <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm text-gray-700">
-                  Showing page <span className="font-medium">{page}</span> of{' '}
-                  <span className="font-medium">{pagination.pages}</span> ({pagination.total} total images)
-                </p>
+            <button
+              onClick={handleRefresh}
+              className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Refresh Data
+            </button>
+          </div>
+        </div>
+
+        {/* Overall Stats */}
+        {folders.length > 0 && (
+          <div className="px-6 py-4 bg-gray-50">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">
+                  {folders.length}
+                </div>
+                <div className="text-sm text-gray-600">Total Folders</div>
               </div>
-              <div>
-                <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
-                  <button
-                    onClick={() => setPage(Math.max(1, page - 1))}
-                    disabled={page === 1}
-                    className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    Previous
-                  </button>
-                  <button
-                    onClick={() => setPage(Math.min(pagination.pages, page + 1))}
-                    disabled={page === pagination.pages}
-                    className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    Next
-                  </button>
-                </nav>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">
+                  {folders.reduce((sum, folder) => sum + (folder.total_images || 0), 0)}
+                </div>
+                <div className="text-sm text-gray-600">Total Images</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-purple-600">
+                  {folders.reduce((sum, folder) => sum + (folder.total_scores || 0), 0)}
+                </div>
+                <div className="text-sm text-gray-600">Total Scores</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-indigo-600">
+                  {(() => {
+                    const totalScores = folders.reduce((sum, folder) => sum + (folder.total_scores || 0), 0);
+                    const weightedSum = folders.reduce((sum, folder) => {
+                      if (folder.avg_score && folder.total_scores) {
+                        return sum + (folder.avg_score * folder.total_scores);
+                      }
+                      return sum;
+                    }, 0);
+                    return totalScores > 0 ? (weightedSum / totalScores).toFixed(2) : 'N/A';
+                  })()}
+                </div>
+                <div className="text-sm text-gray-600">Overall Avg</div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {images.length === 0 && !isLoading && (
-        <div className="text-center py-12">
-          <p className="text-gray-500">No images found. Upload some images to start collecting training data.</p>
+      {/* Folder Sections */}
+      {folders.length > 0 ? (
+        <div className="space-y-6">
+          {folders.map((folder) => (
+            <FolderSection
+              key={folder.folder_id}
+              folder={folder}
+              expandedImageId={expandedImageId}
+              setExpandedImageId={setExpandedImageId}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="bg-white rounded-lg shadow-sm border">
+          <div className="text-center py-12">
+            <div className="text-gray-400 mb-4">
+              <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5a2 2 0 012-2h4a2 2 0 012 2v2H8V5z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No Data Available</h3>
+            <p className="text-gray-500">
+              No folders or images found. Upload some images to folders to start collecting training data.
+            </p>
+          </div>
         </div>
       )}
     </div>

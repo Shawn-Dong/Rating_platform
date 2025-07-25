@@ -16,7 +16,7 @@ export default function BulkAssignment() {
 
   // Filter for active scorers
   const scorers = useMemo(() => {
-    return usersData?.data?.users?.filter(u => u.role === 'scorer' && u.is_active) || [];
+    return usersData?.data?.users?.filter(u => u.role === 'guest') || [];
   }, [usersData]);
 
   const images = imagesData?.data?.images || [];
