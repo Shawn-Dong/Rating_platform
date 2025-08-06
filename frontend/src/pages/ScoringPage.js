@@ -151,22 +151,20 @@ export default function ScoringPage() {
             <div className="border rounded-lg overflow-hidden bg-gray-50">
               <img 
                 src={image.s3_url || `/images/${image.filename}`}
-                alt={user?.role === 'guest' ? 'Score this image' : `Score this image - ${image.original_name || image.filename}`}
+                alt={`Score this image - ${image.original_name || image.filename}`}
                 className="w-full h-auto max-h-96 object-contain"
                 onError={(e) => {
                   e.target.src = '/placeholder-image.png'; // Fallback image
                 }}
               />
             </div>
-            {/* Only show filename and metadata for non-guest users */}
-            {user?.role !== 'guest' && (
-              <div className="mt-4 text-sm text-gray-600">
-                <p>Filename: {image.original_name || image.filename}</p>
-                {image.metadata && (
-                  <p>Metadata: {image.metadata}</p>
-                )}
-              </div>
-            )}
+            {/* Show original filename to all users, but limit metadata to non-guest users */}
+            <div className="mt-4 text-sm text-gray-600">
+              <p>Original Name: {image.original_name || image.filename}</p>
+              {user?.role !== 'guest' && image.metadata && (
+                <p>Metadata: {image.metadata}</p>
+              )}
+            </div>
           </div>
 
           {/* Scoring Form */}

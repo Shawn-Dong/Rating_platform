@@ -42,7 +42,7 @@ export default function ImageDetailPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Image Details{user?.role !== 'guest' ? `: ${image.original_name || image.filename}` : ''}</h1>
+        <h1 className="text-3xl font-bold text-gray-900">Image Details: {image.original_name || image.filename}</h1>
         <p className="mt-2 text-gray-600">
           Review individual scores and statistics for this image.
         </p>
@@ -55,23 +55,25 @@ export default function ImageDetailPage() {
           <div className="border rounded-lg overflow-hidden bg-gray-50">
             <img 
               src={image.s3_url || `/images/${image.filename}`}
-              alt={user?.role === 'guest' ? 'Image' : (image.original_name || image.filename)}
+              alt={image.original_name || image.filename}
               className="w-full h-auto max-h-96 object-contain"
               onError={(e) => {
                 e.target.src = '/placeholder-image.png'; // Fallback image
               }}
             />
           </div>
-          {/* Only show detailed info for non-guest users */}
-          {user?.role !== 'guest' && (
-            <div className="mt-4 text-sm text-gray-600">
-              <p>Filename: {image.original_name || image.filename}</p>
-              {image.metadata && (
-                <p>Metadata: {image.metadata}</p>
-              )}
-              <p>Uploaded: {new Date(image.upload_date).toLocaleDateString()}</p>
-            </div>
-          )}
+          {/* Show original filename to all users, but limit metadata and upload date to non-guest users */}
+          <div className="mt-4 text-sm text-gray-600">
+            <p>Original Name: {image.original_name || image.filename}</p>
+            {user?.role !== 'guest' && (
+              <>
+                {image.metadata && (
+                  <p>Metadata: {image.metadata}</p>
+                )}
+                <p>Uploaded: {new Date(image.upload_date).toLocaleDateString()}</p>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Scoring Statistics */}
